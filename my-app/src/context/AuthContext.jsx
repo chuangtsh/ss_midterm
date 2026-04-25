@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
@@ -17,7 +17,17 @@ export const AuthProvider = ({ children }) => {
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  const ensureProfile = async (firebaseUser, extra = {}) => {
+  const fallbackProfileFromAuth = (firebaseUser) => ({
+    uid: firebaseUser.uid,
+    email: firebaseUser.email,
+    username: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'user',
+    phone: '',
+    address: '',
+    photoURL: firebaseUser.photoURL || '',
+    blockedUsers: [],
+  })
+
+  const ensureProfile = useCallback(async (firebaseUser, extra = {}) => {
     const userRef = doc(db, 'users', firebaseUser.uid)
     const snapshot = await getDoc(userRef)
 
@@ -39,13 +49,31 @@ export const AuthProvider = ({ children }) => {
     }
 
     setProfile(snapshot.data())
-  }
+  }, [])
+
+  const safeEnsureProfile = useCallback(async (firebaseUser, extra = {}) => {
+    const withTimeout = (promise, ms = 7000) =>
+      Promise.race([
+        promise,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Profile sync timeout')), ms),
+        ),
+      ])
+
+    try {
+      await withTimeout(ensureProfile(firebaseUser, extra))
+    } catch (error) {
+      // Keep auth usable even if Firestore rules/profile writes are misconfigured.
+      console.warn('Profile sync failed:', error)
+      setProfile(fallbackProfileFromAuth(firebaseUser))
+    }
+  }, [ensureProfile])
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       setUser(firebaseUser)
       if (firebaseUser) {
-        await ensureProfile(firebaseUser)
+        safeEnsureProfile(firebaseUser)
       } else {
         setProfile(null)
       }
@@ -53,24 +81,26 @@ export const AuthProvider = ({ children }) => {
     })
 
     return unsubscribe
-  }, [])
+  }, [safeEnsureProfile])
 
   const signUp = async ({ email, password, username }) => {
-    const result = await createUserWithEmailAndPassword(auth, email, password)
+    const normalizedEmail = email.trim().toLowerCase()
+    const result = await createUserWithEmailAndPassword(auth, normalizedEmail, password)
     if (username) {
       await updateProfile(result.user, { displayName: username })
     }
-    await ensureProfile(result.user, { username })
+    safeEnsureProfile(result.user, { username })
   }
 
   const signIn = async ({ email, password }) => {
-    const result = await signInWithEmailAndPassword(auth, email, password)
-    await ensureProfile(result.user)
+    const normalizedEmail = email.trim().toLowerCase()
+    const result = await signInWithEmailAndPassword(auth, normalizedEmail, password)
+    safeEnsureProfile(result.user)
   }
 
   const signInGoogle = async () => {
     const result = await signInWithPopup(auth, googleProvider)
-    await ensureProfile(result.user)
+    safeEnsureProfile(result.user)
   }
 
   const logout = () => signOut(auth)
