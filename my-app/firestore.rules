@@ -1,0 +1,2 @@
+// Firestore is not used in this project.
+// All application data is stored in Firebase Realtime Database.

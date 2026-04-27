@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useAuth } from '../context/AuthContext'
 import { useChat } from '../context/ChatContext'
@@ -12,6 +12,11 @@ const ChatWindow = ({ room, onReply }) => {
   const [draft, setDraft] = useState('')
   const [highlightId, setHighlightId] = useState('')
   const refs = useRef({})
+  const endRef = useRef(null)
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  }, [messages.length])
 
   const canSend = useMemo(() => {
     if (!room?.isPrivate) return true
@@ -68,9 +73,9 @@ const ChatWindow = ({ room, onReply }) => {
               initial={{ opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
             >
-              <div className="meta">
+              <div className="message-head">
                 <img src={message.senderPhoto || '/vite.svg'} alt="avatar" />
-                <span>{message.senderName || message.senderEmail}</span>
+                <span className="sender">{message.senderName || message.senderEmail}</span>
               </div>
 
               {message.replyPreview && (
@@ -100,26 +105,27 @@ const ChatWindow = ({ room, onReply }) => {
                   return (
                     <button
                       key={emoji}
-                      className="pill"
+                      className={`reaction-pill ${count > 0 ? 'active' : ''}`}
                       type="button"
                       onClick={() => toggleReaction({ roomId: room.id, message, emoji })}
                     >
-                      {emoji} {count > 0 ? count : ''}
+                      <span>{emoji}</span>
+                      {count > 0 && <em>{count}</em>}
                     </button>
                   )
                 })}
               </div>
 
-              <div className="row-wrap">
-                <button className="link-btn" type="button" onClick={() => onReply(message)}>
+              <div className="message-actions">
+                <button className="action-btn" type="button" onClick={() => onReply(message)}>
                   Reply
                 </button>
                 {own && (
                   <>
-                    <button className="link-btn" type="button" onClick={() => startEdit(message)}>
+                    <button className="action-btn" type="button" onClick={() => startEdit(message)}>
                       Edit
                     </button>
-                    <button className="link-btn" type="button" onClick={() => unsendMessage({ roomId: room.id, message })}>
+                    <button className="action-btn danger" type="button" onClick={() => unsendMessage({ roomId: room.id, message })}>
                       Unsend
                     </button>
                   </>
@@ -128,6 +134,7 @@ const ChatWindow = ({ room, onReply }) => {
             </motion.article>
           )
         })}
+        <div ref={endRef} />
       </div>
     </section>
   )

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { askBot } from '../services/chatbot'
 
 const MessageComposer = ({
@@ -6,44 +6,109 @@ const MessageComposer = ({
   onOpenSticker,
   onCancelReply,
   replyTo,
+  error,
   disabled,
 }) => {
   const [text, setText] = useState('')
   const [imageFile, setImageFile] = useState(null)
   const [gifTerm, setGifTerm] = useState('')
   const [gifResults, setGifResults] = useState([])
+  const [gifOpen, setGifOpen] = useState(false)
+  const [gifBusy, setGifBusy] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [localError, setLocalError] = useState('')
+  const fileInputRef = useRef(null)
+
+  const clearImage = () => {
+    setImageFile(null)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  const runWithTimeout = async (promiseFactory, timeoutMs = 12000) => {
+    return Promise.race([
+      promiseFactory(),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Request timed out. Please try again.')), timeoutMs),
+      ),
+    ])
+  }
 
   const submit = async (event) => {
     event.preventDefault()
-    await onSend({ text, imageFile })
-    setText('')
-    setImageFile(null)
+    setBusy(true)
+    setLocalError('')
+    try {
+      await runWithTimeout(() => onSend({ text, imageFile }))
+      setText('')
+      clearImage()
+    } catch (err) {
+      setLocalError(err.message || 'Failed to send message.')
+    } finally {
+      setBusy(false)
+    }
   }
 
-  const fetchGifs = async () => {
-    const key = import.meta.env.VITE_TENOR_API_KEY
-    if (!key || !gifTerm) return
+  const fetchGifs = useCallback(async (term = gifTerm) => {
+    const key = import.meta.env.VITE_GIPHY_API_KEY || 'XLH4a1r3MPnDris9011QGpicsRcn2TG7'
+    const query = term.trim()
+    if (!key || !query) {
+      setGifResults([])
+      return
+    }
 
-    const response = await fetch(
-      `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(gifTerm)}&key=${key}&limit=8&media_filter=gif`,
-    )
-    const json = await response.json()
-    setGifResults(json.results || [])
-  }
+    setGifBusy(true)
+    try {
+      const response = await fetch(
+        `https://api.giphy.com/v1/gifs/search?api_key=${key}&q=${encodeURIComponent(query)}&limit=18&rating=pg-13`,
+      )
+      const json = await response.json()
+      setGifResults(json.data || [])
+    } finally {
+      setGifBusy(false)
+    }
+  }, [gifTerm])
+
+  useEffect(() => {
+    if (!gifOpen) return
+    const timer = setTimeout(() => {
+      fetchGifs(gifTerm)
+    }, 240)
+
+    return () => clearTimeout(timer)
+  }, [gifTerm, gifOpen, fetchGifs])
 
   const sendGif = async (gif) => {
-    const url = gif?.media_formats?.gif?.url
+    const url = gif?.images?.original?.url
     if (!url) return
-    await onSend({ gifUrl: url })
-    setGifResults([])
-    setGifTerm('')
+    setBusy(true)
+    setLocalError('')
+    try {
+      await runWithTimeout(() => onSend({ gifUrl: url }))
+      setGifResults([])
+      setGifTerm('')
+      setGifOpen(false)
+    } catch (err) {
+      setLocalError(err.message || 'Failed to send GIF.')
+    } finally {
+      setBusy(false)
+    }
   }
 
   const sendBotMessage = async () => {
     if (!text.trim()) return
-    const answer = await askBot(text)
-    await onSend({ text: `🤖 ${answer}` })
-    setText('')
+    setBusy(true)
+    setLocalError('')
+    try {
+      const answer = await askBot(text)
+      await runWithTimeout(() => onSend({ text: `🤖 ${answer}` }))
+      setText('')
+    } catch (err) {
+      setLocalError(err.message || 'Bot request failed.')
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -58,50 +123,83 @@ const MessageComposer = ({
       )}
 
       <form className="composer" onSubmit={submit}>
-        <input
-          placeholder="Type a message"
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          disabled={disabled}
-        />
+        <div className="composer-bar">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={(event) => setImageFile(event.target.files?.[0] || null)}
+            disabled={disabled || busy}
+            className="hidden-file"
+            id="chat-image-input"
+          />
 
-        <input
-          type="file"
-          accept="image/*"
-          onChange={(event) => setImageFile(event.target.files?.[0] || null)}
-          disabled={disabled}
-        />
+          <label htmlFor="chat-image-input" className="tool-btn" title="Attach image">
+            🖼
+          </label>
 
-        <button className="btn" type="submit" disabled={disabled}>
-          Send
-        </button>
-        <button className="btn btn-alt" type="button" onClick={onOpenSticker} disabled={disabled}>
-          Draw
-        </button>
-        <button className="btn btn-ghost" type="button" onClick={sendBotMessage} disabled={disabled}>
-          Ask Bot
-        </button>
+          <button
+            className={`tool-btn ${gifOpen ? 'active' : ''}`}
+            type="button"
+            onClick={() => setGifOpen((prev) => !prev)}
+            disabled={disabled || busy}
+            title="GIF"
+          >
+            GIF
+          </button>
+
+          <button className="tool-btn" type="button" onClick={onOpenSticker} disabled={disabled || busy} title="Draw sticker">
+            ✏️
+          </button>
+
+          <button className="tool-btn" type="button" onClick={sendBotMessage} disabled={disabled || busy} title="Ask bot">
+            AI
+          </button>
+
+          <input
+            className="message-input-round"
+            placeholder="Type a message"
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            disabled={disabled || busy}
+          />
+
+          <button className="send-btn" type="submit" disabled={disabled || busy}>
+            {busy ? '…' : '➤'}
+          </button>
+        </div>
+
+        {imageFile && (
+          <div className="file-chip">
+            <span>🖼 {imageFile.name}</span>
+            <button className="action-btn" type="button" onClick={clearImage} disabled={disabled || busy}>
+              Remove
+            </button>
+          </div>
+        )}
       </form>
 
-      <div className="gif-bar">
-        <input
-          value={gifTerm}
-          onChange={(event) => setGifTerm(event.target.value)}
-          placeholder="Search GIFs"
-          disabled={disabled}
-        />
-        <button className="btn btn-alt" type="button" onClick={fetchGifs} disabled={disabled}>
-          Find GIF
-        </button>
-      </div>
+      {(localError || error) && <p className="error-text">{localError || error}</p>}
 
-      {!!gifResults.length && (
-        <div className="gif-grid">
-          {gifResults.map((gif) => (
-            <button key={gif.id} className="gif-item" type="button" onClick={() => sendGif(gif)}>
-              <img src={gif.media_formats?.tinygif?.url} alt={gif.content_description || 'gif'} loading="lazy" />
-            </button>
-          ))}
+      {gifOpen && (
+        <div className="gif-popover">
+          <input
+            value={gifTerm}
+            onChange={(event) => setGifTerm(event.target.value)}
+            placeholder="Search GIFs"
+            disabled={disabled || busy}
+            className="gif-search"
+          />
+
+          {gifBusy && <small>Searching…</small>}
+
+          <div className="gif-grid">
+            {gifResults.map((gif) => (
+              <button key={gif.id} className="gif-item" type="button" onClick={() => sendGif(gif)}>
+                <img src={gif?.images?.fixed_width_small?.url || gif?.images?.preview_gif?.url} alt={gif?.title || 'gif'} loading="lazy" />
+              </button>
+            ))}
+          </div>
         </div>
       )}
     </div>

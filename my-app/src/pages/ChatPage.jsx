@@ -9,7 +9,7 @@ import StickerCanvas from '../components/StickerCanvas'
 
 const ChatPage = () => {
   const { user, logout } = useAuth()
-  const { rooms, activeRoomId, sendMessage, sendSticker } = useChat()
+  const { rooms, activeRoomId, sendMessage, sendSticker, chatError } = useChat()
 
   const [profileOpen, setProfileOpen] = useState(false)
   const [stickerOpen, setStickerOpen] = useState(false)
@@ -67,6 +67,7 @@ const ChatPage = () => {
               onOpenSticker={() => setStickerOpen(true)}
               onCancelReply={() => setReplyTo(null)}
               replyTo={replyTo}
+              error={chatError}
             />
           </>
         ) : (

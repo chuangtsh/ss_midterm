@@ -75,50 +75,47 @@ VITE_OPENAI_MODEL=gpt-4.1-mini
 
 For production, use Firebase Functions as a proxy for AI API keys.
 
-## 5) Firestore data model
+## 5) Realtime Database data model
 
-- users/{uid}
-	- username, email, phone, address, photoURL, blockedUsers[]
+- users/{uid}/profile
+	- username, usernameLower, email, emailLower, phone, address, photoURL, blockedUsers[]
 - rooms/{roomId}
-	- name, isPrivate, members[], createdBy, updatedAt
-- rooms/{roomId}/messages/{messageId}
+	- name, isPrivate, members: { uid: true }, createdBy, createdAt, updatedAt
+- messages/{roomId}/{messageId}
 	- senderId, senderEmail, senderName, senderPhoto
 	- text, searchTokens[]
 	- imageUrl, gifUrl, sticker
 	- replyToId, replyPreview
-	- reactions: { emoji: [uid...] }
+	- reactions: { emoji: { uid: true } }
 	- participants[]
 
-## 6) Firestore security rules (starter)
+## 6) Realtime Database security rules (starter)
 
 ```txt
-rules_version = '2';
-service cloud.firestore {
-	match /databases/{database}/documents {
-		function isAuthed() {
-			return request.auth != null;
-		}
-
-		function isRoomMember(roomId) {
-			return isAuthed() && request.auth.uid in get(/databases/$(database)/documents/rooms/$(roomId)).data.members;
-		}
-
-		match /users/{uid} {
-			allow read: if isAuthed();
-			allow write: if isAuthed() && request.auth.uid == uid;
-		}
-
-		match /rooms/{roomId} {
-			allow create: if isAuthed();
-			allow read: if isRoomMember(roomId);
-			allow update: if isRoomMember(roomId);
-
-			match /messages/{messageId} {
-				allow read: if isRoomMember(roomId);
-				allow create: if isRoomMember(roomId)
-					&& request.resource.data.senderId == request.auth.uid;
-				allow update, delete: if isRoomMember(roomId)
-					&& resource.data.senderId == request.auth.uid;
+{
+	"rules": {
+		"users": {
+			".read": "auth != null",
+			".indexOn": ["profile/usernameLower", "profile/emailLower"],
+			"$uid": {
+				"profile": {
+					".read": "auth != null",
+					".write": "auth != null && auth.uid === $uid"
+				}
+			}
+		},
+		"rooms": {
+			".read": "auth != null",
+			"$roomId": {
+				".write": "auth != null && (data.exists() ? data.child('members').child(auth.uid).val() === true : newData.child('members').child(auth.uid).val() === true)"
+			}
+		},
+		"messages": {
+			"$roomId": {
+				".read": "auth != null && root.child('rooms').child($roomId).child('members').child(auth.uid).val() === true",
+				"$messageId": {
+					".write": "auth != null && root.child('rooms').child($roomId).child('members').child(auth.uid).val() === true && ((!data.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && data.child('senderId').val() === auth.uid))"
+				}
 			}
 		}
 	}
@@ -146,5 +143,5 @@ firebase deploy
 
 - Move AI requests to Firebase Functions (secret-safe)
 - Add Cloud Functions to enforce bidirectional block policy server-side
-- Add composite indexes for room/message search queries when prompted by Firestore console
+- Add a server-side search index if global message search volume grows
 - Add optional service worker if you need true background push notifications

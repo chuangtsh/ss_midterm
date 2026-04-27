@@ -7,14 +7,20 @@ const RoomList = () => {
   const { profile } = useAuth()
   const [newRoomUser, setNewRoomUser] = useState('')
   const [search, setSearch] = useState('')
+  const [error, setError] = useState('')
 
   const ownName = profile?.username || 'me'
 
   const createPrivate = async () => {
+    setError('')
     const uid = newRoomUser.trim()
     if (!uid) return
-    await createRoom({ memberIds: [uid], name: `${ownName} + ${uid}` })
-    setNewRoomUser('')
+    try {
+      await createRoom({ memberIds: [uid], name: `${ownName} + ${uid}` })
+      setNewRoomUser('')
+    } catch (err) {
+      setError(err.message || 'Failed to create room.')
+    }
   }
 
   const summary = useMemo(() => {
@@ -35,6 +41,7 @@ const RoomList = () => {
         <button type="button" className="btn" onClick={createPrivate}>
           Create private room
         </button>
+        {error && <small className="error-text">{error}</small>}
       </div>
 
       <div className="stack">
