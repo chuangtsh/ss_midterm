@@ -8,6 +8,7 @@ const emojis = ['👍', '❤️', '😂', '😮', '🔥']
 const ChatWindow = ({ room, onReply }) => {
   const { user, profile } = useAuth()
   const { messages, editMessage, unsendMessage, toggleReaction, blockUser } = useChat()
+  const lastReactRef = useRef(0)
   const [editingId, setEditingId] = useState('')
   const [draft, setDraft] = useState('')
   const [highlightId, setHighlightId] = useState('')
@@ -50,6 +51,7 @@ const ChatWindow = ({ room, onReply }) => {
       <header className="chat-header">
         <div>
           <h2>{room?.name || 'Choose a room'}</h2>
+          {room && <small>{room.isPrivate ? 'Private chat' : 'Group chat'}</small>}
           {!canSend && <p className="warning">You blocked this user. Direct messages are disabled.</p>}
         </div>
 
@@ -102,12 +104,20 @@ const ChatWindow = ({ room, onReply }) => {
               <div className="reaction-row">
                 {emojis.map((emoji) => {
                   const count = message.reactions?.[emoji]?.length || 0
+                  const handleToggle = (event) => {
+                    const now = Date.now()
+                    if (now - lastReactRef.current < 300) return
+                    lastReactRef.current = now
+                    toggleReaction({ roomId: room.id, message, emoji })
+                  }
+
                   return (
                     <button
                       key={emoji}
                       className={`reaction-pill ${count > 0 ? 'active' : ''}`}
                       type="button"
-                      onClick={() => toggleReaction({ roomId: room.id, message, emoji })}
+                      onClick={handleToggle}
+                      onPointerUp={handleToggle}
                     >
                       <span>{emoji}</span>
                       {count > 0 && <em>{count}</em>}

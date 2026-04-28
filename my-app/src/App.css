@@ -112,7 +112,7 @@ textarea {
 .chat-layout {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
-  max-height: 100dvh;
+  height: 100dvh;
   overflow: hidden;
   background:
     radial-gradient(circle at 8% -10%, rgba(59, 130, 246, 0.15), transparent 28%),
@@ -142,6 +142,11 @@ textarea {
   margin: 0;
   display: grid;
   gap: 0.45rem;
+}
+
+.room-row {
+  display: grid;
+  gap: 0.35rem;
 }
 
 .room-btn {
@@ -191,8 +196,8 @@ textarea {
   border-radius: 20px;
   background: rgba(255, 255, 255, 0.82);
   backdrop-filter: blur(8px);
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 
@@ -211,11 +216,18 @@ textarea {
 
 .message-list {
   overflow-y: auto;
-  display: grid;
-  gap: 0.6rem;
+  display: block;
   padding: 0.7rem;
-  align-content: start;
   scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  flex: 1 1 auto;
+  min-height: 0;
+  overscroll-behavior: contain;
+}
+
+.message + .message {
+  margin-top: 0.6rem;
 }
 
 .message {
@@ -226,6 +238,20 @@ textarea {
   border: 1px solid #e2e8f0;
   box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
   animation: rise-in 260ms ease-out;
+  overflow: hidden;
+}
+
+.message p,
+.reply-chip,
+.reply-preview,
+.sender {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.message p {
+  white-space: pre-wrap;
+  margin: 0.3rem 0 0;
 }
 
 .message.own {

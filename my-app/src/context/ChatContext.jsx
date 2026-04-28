@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import {
+  endAt,
   equalTo,
   get,
   limitToFirst,
@@ -11,6 +12,7 @@ import {
   ref as rtdbRef,
   remove,
   set,
+  startAt,
   update,
 } from 'firebase/database'
 import {
@@ -32,6 +34,8 @@ export const ChatProvider = ({ children }) => {
   const [remoteMessages, setRemoteMessages] = useState([])
   const [pendingMessages, setPendingMessages] = useState([])
   const [searchResults, setSearchResults] = useState([])
+  const [userSearchResults, setUserSearchResults] = useState([])
+  const [userSearchLoading, setUserSearchLoading] = useState(false)
   const [chatError, setChatError] = useState('')
   const [blockedByActiveRoom, setBlockedByActiveRoom] = useState(false)
 
@@ -255,6 +259,7 @@ export const ChatProvider = ({ children }) => {
       if (!existing.exists()) {
         await set(roomRef, {
           name: sanitizeText(name) || 'Private Room',
+          identifier: roomId,
           isPrivate: true,
           members: memberMap,
           createdBy: user.uid,
@@ -272,7 +277,8 @@ export const ChatProvider = ({ children }) => {
     if (!roomId) throw new Error('Failed to create room.')
 
     await set(roomRef, {
-      name: sanitizeText(name) || 'Private Room',
+      name: sanitizeText(name) || (members.length > 2 ? 'Group Chat' : 'Private Room'),
+      identifier: roomId,
       isPrivate: members.length === 2,
       members: Object.fromEntries(members.map((uid) => [uid, true])),
       createdBy: user.uid,
@@ -282,6 +288,58 @@ export const ChatProvider = ({ children }) => {
 
     setActiveRoomId(roomId)
     return roomId
+  }
+
+  const createGroupRoom = async ({ memberIds = [], name = '' }) => {
+    const unique = [...new Set(memberIds.map((item) => (item || '').trim()).filter(Boolean))]
+    if (unique.length < 2) {
+      throw new Error('Add at least 2 other users for a group chat.')
+    }
+    return createRoom({ memberIds: unique, name: sanitizeText(name) || 'Group Chat' })
+  }
+
+  const updateRoomIdentifier = async ({ roomId, identifier }) => {
+    if (!user || !roomId) return
+
+    const clean = sanitizeText(identifier)
+    if (!clean) throw new Error('Room ID cannot be empty.')
+
+    const roomRef = rtdbRef(rtdb, `rooms/${roomId}`)
+    const snapshot = await get(roomRef)
+    if (!snapshot.exists()) throw new Error('Room not found.')
+
+    const room = snapshot.val() || {}
+    const members = normalizeMembers(room.members)
+    if (!members.includes(user.uid)) {
+      throw new Error('Only room members can modify room ID.')
+    }
+
+    await update(roomRef, {
+      identifier: clean,
+      updatedAt: Date.now(),
+    })
+  }
+
+  const updateRoomName = async ({ roomId, name }) => {
+    if (!user || !roomId) return
+
+    const clean = sanitizeText(name)
+    if (!clean) throw new Error('Room name cannot be empty.')
+
+    const roomRef = rtdbRef(rtdb, `rooms/${roomId}`)
+    const snapshot = await get(roomRef)
+    if (!snapshot.exists()) throw new Error('Room not found.')
+
+    const room = snapshot.val() || {}
+    const members = normalizeMembers(room.members)
+    if (!members.includes(user.uid)) {
+      throw new Error('Only room members can rename this room.')
+    }
+
+    await update(roomRef, {
+      name: clean,
+      updatedAt: Date.now(),
+    })
   }
 
   const inviteMembers = async ({ roomId, memberIds }) => {
@@ -445,6 +503,67 @@ export const ChatProvider = ({ children }) => {
     setSearchResults(matches)
   }
 
+  const searchUsers = async (term) => {
+    if (!user) return
+
+    const safe = sanitizeText(term).toLowerCase().trim()
+    if (!safe) {
+      setUserSearchResults([])
+      return
+    }
+
+    setUserSearchLoading(true)
+    try {
+      const usersRef = rtdbRef(rtdb, 'users')
+
+      const [byUsername, byEmail] = await Promise.all([
+        get(
+          query(
+            usersRef,
+            orderByChild('profile/usernameLower'),
+            startAt(safe),
+            endAt(`${safe}\uf8ff`),
+            limitToFirst(20),
+          ),
+        ),
+        get(
+          query(
+            usersRef,
+            orderByChild('profile/emailLower'),
+            startAt(safe),
+            endAt(`${safe}\uf8ff`),
+            limitToFirst(20),
+          ),
+        ),
+      ])
+
+      const merged = new Map()
+      const collect = (snapshot) => {
+        const value = snapshot.val() || {}
+        Object.entries(value).forEach(([uid, item]) => {
+          if (uid === user.uid) return
+          const profileData = item?.profile || {}
+          const username = profileData.username || ''
+          const email = profileData.email || ''
+          if (!username && !email) return
+          merged.set(uid, {
+            uid,
+            username,
+            email,
+            photoURL: profileData.photoURL || '',
+          })
+        })
+      }
+
+      if (byUsername?.exists()) collect(byUsername)
+      if (byEmail?.exists()) collect(byEmail)
+
+      setUserSearchResults(Array.from(merged.values()))
+    } finally {
+      setUserSearchLoading(false)
+    }
+  }
+
   const blockUser = async (otherUid) => {
     if (!user || !otherUid || otherUid === user.uid) return
     const profileRef = rtdbRef(rtdb, `users/${user.uid}/profile`)
@@ -481,8 +600,13 @@ export const ChatProvider = ({ children }) => {
     setActiveRoomId,
     messages,
     searchResults,
+    userSearchResults,
+    userSearchLoading,
     chatError,
     createRoom,
+    createGroupRoom,
+    updateRoomIdentifier,
+    updateRoomName,
     inviteMembers,
     sendMessage,
     sendSticker,
@@ -490,6 +614,7 @@ export const ChatProvider = ({ children }) => {
     unsendMessage,
     toggleReaction,
     searchAllMessages,
+    searchUsers,
     blockUser,
     unblockUser,
   }
