@@ -28,7 +28,6 @@ export const AuthProvider = ({ children }) => {
     phone: '',
     address: '',
     photoURL: firebaseUser.photoURL || '',
-    blockedUsers: [],
   })
 
   const ensureProfile = useCallback(async (firebaseUser, extra = {}) => {
@@ -45,7 +44,6 @@ export const AuthProvider = ({ children }) => {
         phone: extra.phone || '',
         address: extra.address || '',
         photoURL: firebaseUser.photoURL || '',
-        blockedUsers: [],
         createdAt: Date.now(),
         updatedAt: Date.now(),
       }
@@ -65,8 +63,6 @@ export const AuthProvider = ({ children }) => {
     if (!current.usernameLower) {
       patch.usernameLower = (patch.username || current.username || '').toLowerCase()
     }
-    if (!Array.isArray(current.blockedUsers)) patch.blockedUsers = []
-
     if (Object.keys(patch).length > 0) {
       patch.updatedAt = Date.now()
       await update(profileRef, patch)
@@ -75,7 +71,6 @@ export const AuthProvider = ({ children }) => {
     setProfile({
       ...current,
       ...patch,
-      blockedUsers: Array.isArray(current.blockedUsers) ? current.blockedUsers : [],
     })
   }, [])
 
@@ -103,7 +98,6 @@ export const AuthProvider = ({ children }) => {
             setProfile({
               ...fallbackProfileFromAuth(firebaseUser),
               ...data,
-              blockedUsers: Array.isArray(data.blockedUsers) ? data.blockedUsers : [],
             })
             return
           }
@@ -211,7 +205,6 @@ export const AuthProvider = ({ children }) => {
       phone: payload.phone ?? profile?.phone ?? '',
       address: payload.address ?? profile?.address ?? '',
       photoURL: payload.photoURL ?? profile?.photoURL ?? '',
-      blockedUsers: Array.isArray(profile?.blockedUsers) ? profile.blockedUsers : [],
       updatedAt: Date.now(),
     }
 

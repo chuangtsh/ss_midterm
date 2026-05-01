@@ -33,11 +33,12 @@ export const ChatProvider = ({ children }) => {
   const [activeRoomId, setActiveRoomId] = useState(null)
   const [remoteMessages, setRemoteMessages] = useState([])
   const [pendingMessages, setPendingMessages] = useState([])
+  const [memberProfiles, setMemberProfiles] = useState({})
   const [searchResults, setSearchResults] = useState([])
   const [userSearchResults, setUserSearchResults] = useState([])
   const [userSearchLoading, setUserSearchLoading] = useState(false)
   const [chatError, setChatError] = useState('')
-  const [blockedByActiveRoom, setBlockedByActiveRoom] = useState(false)
+  const [searchTarget, setSearchTarget] = useState(null)
 
   const normalizeMembers = (members) => {
     if (Array.isArray(members)) return members
@@ -135,6 +136,7 @@ export const ChatProvider = ({ children }) => {
     if (!activeRoomId || !user) {
       setRemoteMessages([])
       setPendingMessages([])
+      setMemberProfiles({})
       return
     }
 
@@ -150,11 +152,9 @@ export const ChatProvider = ({ children }) => {
         }))
         .sort((a, b) => (a?.createdAtMs || 0) - (b?.createdAtMs || 0))
 
-      const myBlocked = new Set(profile?.blockedUsers || [])
-      const filtered = next.filter((m) => !myBlocked.has(m.senderId))
-      setRemoteMessages(filtered)
+      setRemoteMessages(next)
 
-      const syncedClientIds = new Set(filtered.map((message) => message.clientId).filter(Boolean))
+      const syncedClientIds = new Set(next.map((message) => message.clientId).filter(Boolean))
       setPendingMessages((prev) => prev.filter((message) => !syncedClientIds.has(message.clientId)))
     }
 
@@ -165,35 +165,43 @@ export const ChatProvider = ({ children }) => {
     onValue(messagesRef, onMessages, onMessagesError)
 
     return () => off(messagesRef, 'value', onMessages)
-  }, [activeRoomId, user, profile?.blockedUsers])
+  }, [activeRoomId, user])
 
   useEffect(() => {
     if (!user || !activeRoomId) {
-      setBlockedByActiveRoom(false)
+      setMemberProfiles({})
       return
     }
 
     const room = rooms.find((item) => item.id === activeRoomId)
-    if (!room?.isPrivate || room.members?.length !== 2) {
-      setBlockedByActiveRoom(false)
+    const members = room?.members || []
+    if (members.length === 0) {
+      setMemberProfiles({})
       return
     }
 
-    const otherId = room.members.find((id) => id !== user.uid)
-    if (!otherId) {
-      setBlockedByActiveRoom(false)
-      return
-    }
+    const handlers = new Map()
 
-    const profileRef = rtdbRef(rtdb, `users/${otherId}/profile`)
-    const onOtherProfile = (snapshot) => {
-      const blockedUsers = snapshot.val()?.blockedUsers || []
-      setBlockedByActiveRoom(Array.isArray(blockedUsers) && blockedUsers.includes(user.uid))
-    }
+    members.forEach((uid) => {
+      const profileRef = rtdbRef(rtdb, `users/${uid}/profile`)
+      const handler = (snapshot) => {
+        const profileData = snapshot.val() || {}
+        setMemberProfiles((prev) => ({
+          ...prev,
+          [uid]: profileData,
+        }))
+      }
+      handlers.set(uid, handler)
+      onValue(profileRef, handler, () => {})
+    })
 
-    onValue(profileRef, onOtherProfile, () => setBlockedByActiveRoom(false))
-    return () => off(profileRef, 'value', onOtherProfile)
+    return () => {
+      handlers.forEach((handler, uid) => {
+        off(rtdbRef(rtdb, `users/${uid}/profile`), 'value', handler)
+      })
+    }
   }, [activeRoomId, rooms, user])
+
 
   const uploadFile = async (file) => {
     const objectRef = ref(storage, `uploads/${user.uid}/${Date.now()}-${file.name}`)
@@ -364,10 +372,6 @@ export const ChatProvider = ({ children }) => {
     const room = rooms.find((item) => item.id === roomId)
     if (!room) {
       throw new Error('No active room selected.')
-    }
-
-    if (room.isPrivate && blockedByActiveRoom) {
-      throw new Error('This user blocked you. You can no longer send direct messages.')
     }
 
     const cleanText = sanitizeText(text)
@@ -564,31 +568,6 @@ export const ChatProvider = ({ children }) => {
     }
   }
 
-  const blockUser = async (otherUid) => {
-    if (!user || !otherUid || otherUid === user.uid) return
-    const profileRef = rtdbRef(rtdb, `users/${user.uid}/profile`)
-    const snapshot = await get(profileRef)
-    const blockedUsers = Array.isArray(snapshot.val()?.blockedUsers) ? snapshot.val().blockedUsers : []
-    if (blockedUsers.includes(otherUid)) return
-
-    await update(profileRef, {
-      blockedUsers: [...blockedUsers, otherUid],
-      updatedAt: Date.now(),
-    })
-  }
-
-  const unblockUser = async (otherUid) => {
-    if (!user || !otherUid) return
-    const profileRef = rtdbRef(rtdb, `users/${user.uid}/profile`)
-    const snapshot = await get(profileRef)
-    const blockedUsers = Array.isArray(snapshot.val()?.blockedUsers) ? snapshot.val().blockedUsers : []
-    if (!blockedUsers.includes(otherUid)) return
-
-    await update(profileRef, {
-      blockedUsers: blockedUsers.filter((id) => id !== otherUid),
-      updatedAt: Date.now(),
-    })
-  }
 
   const sendSticker = async ({ roomId, sticker, replyTo }) => {
     await sendMessage({ roomId, sticker, replyTo })
@@ -599,7 +578,10 @@ export const ChatProvider = ({ children }) => {
     activeRoomId,
     setActiveRoomId,
     messages,
+    memberProfiles,
     searchResults,
+    searchTarget,
+    setSearchTarget,
     userSearchResults,
     userSearchLoading,
     chatError,
@@ -615,8 +597,6 @@ export const ChatProvider = ({ children }) => {
     toggleReaction,
     searchAllMessages,
     searchUsers,
-    blockUser,
-    unblockUser,
   }
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>

@@ -9,21 +9,23 @@ import StickerCanvas from '../components/StickerCanvas'
 
 const ChatPage = () => {
   const { user, logout } = useAuth()
-  const { rooms, activeRoomId, sendMessage, sendSticker, chatError } = useChat()
+  const { rooms, activeRoomId, sendMessage, sendSticker, chatError, messages } = useChat()
 
   const [profileOpen, setProfileOpen] = useState(false)
   const [stickerOpen, setStickerOpen] = useState(false)
   const [replyTo, setReplyTo] = useState(null)
-  const lastMessageCount = useRef(0)
+  const [notificationPermission, setNotificationPermission] = useState(
+    typeof Notification !== 'undefined' ? Notification.permission : 'denied',
+  )
+  const lastNotifiedId = useRef('')
 
   const room = useMemo(() => rooms.find((item) => item.id === activeRoomId), [rooms, activeRoomId])
 
-  useEffect(() => {
+  const requestNotifications = async () => {
     if (!('Notification' in window)) return
-    if (Notification.permission === 'default') {
-      Notification.requestPermission()
-    }
-  }, [])
+    const permission = await Notification.requestPermission()
+    setNotificationPermission(permission)
+  }
 
   const send = async ({ text, imageFile, gifUrl }) => {
     if (!activeRoomId) return
@@ -32,15 +34,20 @@ const ChatPage = () => {
   }
 
   useEffect(() => {
-    if (!room) return
-    const unread = (room.unreadBy || {})[user.uid] || 0
-    if (unread > lastMessageCount.current && Notification.permission === 'granted') {
-      new Notification(`Unread messages in ${room.name}`, {
-        body: 'Open chat to read new updates.',
-      })
-    }
-    lastMessageCount.current = unread
-  }, [room, user?.uid])
+    if (!room || !user) return
+    if (document.visibilityState === 'visible') return
+    if (notificationPermission !== 'granted') return
+    if (!messages.length) return
+
+    const latest = messages[messages.length - 1]
+    if (!latest || latest.senderId === user.uid) return
+    if (latest.id && latest.id === lastNotifiedId.current) return
+
+    lastNotifiedId.current = latest.id || ''
+    new Notification(`New message in ${room.name}`, {
+      body: latest.text ? latest.text.slice(0, 120) : 'Open chat to read new updates.',
+    })
+  }, [room, user, messages, notificationPermission])
 
   return (
     <div className="chat-layout">
@@ -50,6 +57,11 @@ const ChatPage = () => {
         <div className="top-row">
           <h1>Realtime Chatroom</h1>
           <div className="row-wrap">
+            {'Notification' in window && notificationPermission !== 'granted' && (
+              <button className="btn btn-ghost" type="button" onClick={requestNotifications}>
+                Enable notifications
+              </button>
+            )}
             <button className="btn btn-alt" type="button" onClick={() => setProfileOpen(true)}>
               Profile
             </button>

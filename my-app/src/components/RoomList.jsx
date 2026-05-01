@@ -13,36 +13,23 @@ const RoomList = () => {
     searchAllMessages,
     searchUsers,
     searchResults,
+    setSearchTarget,
     userSearchResults,
     userSearchLoading,
     inviteMembers,
   } = useChat()
   const { profile } = useAuth()
 
-  const [newRoomUser, setNewRoomUser] = useState('')
-  const [groupName, setGroupName] = useState('')
   const [userSearch, setUserSearch] = useState('')
   const [selectedUsers, setSelectedUsers] = useState([])
   const [debouncedQuery, setDebouncedQuery] = useState('')
-  const [addTargetUid, setAddTargetUid] = useState('')
   const debouncedRef = useRef(null)
-  const [search, setSearch] = useState('')
   const [error, setError] = useState('')
+  const [globalQuery, setGlobalQuery] = useState('')
+  const globalDebouncedRef = useRef(null)
+  const globalInputRef = useRef(null)
 
   const ownName = profile?.username || 'me'
-  const existingGroups = rooms.filter((r) => !r.isPrivate && r.members.includes(profile?.uid))
-
-  const createPrivate = async () => {
-    setError('')
-    const uid = newRoomUser.trim()
-    if (!uid) return
-    try {
-      await createRoom({ memberIds: [uid], name: `${ownName} + ${uid}` })
-      setNewRoomUser('')
-    } catch (err) {
-      setError(err.message || 'Failed to create room.')
-    }
-  }
 
   const addUserToGroup = (uid) => {
     setSelectedUsers((prev) => (prev.includes(uid) ? prev : [...prev, uid]))
@@ -55,8 +42,14 @@ const RoomList = () => {
   const createGroup = async () => {
     setError('')
     try {
-      await createGroupRoom({ name: groupName, memberIds: selectedUsers })
-      setGroupName('')
+      const defaultName = selectedUsers
+        .map((uid) => {
+          const match = userSearchResults.find((item) => item.uid === uid)
+          return match?.username || match?.email || uid
+        })
+        .filter(Boolean)
+        .join(', ')
+      await createGroupRoom({ name: defaultName || 'Group Chat', memberIds: selectedUsers })
       setUserSearch('')
       setSelectedUsers([])
     } catch (err) {
@@ -71,27 +64,14 @@ const RoomList = () => {
   }, [userSearch])
 
   useEffect(() => {
+    if (globalDebouncedRef.current) clearTimeout(globalDebouncedRef.current)
+    globalDebouncedRef.current = setTimeout(() => searchAllMessages(globalQuery), 280)
+    return () => clearTimeout(globalDebouncedRef.current)
+  }, [globalQuery, searchAllMessages])
+
+  useEffect(() => {
     if (debouncedQuery && debouncedQuery.trim()) searchUsers(debouncedQuery)
   }, [debouncedQuery])
-
-  const handleAddToExisting = async (roomId, uid) => {
-    try {
-      await inviteMembers({ roomId, memberIds: [uid] })
-      setAddTargetUid('')
-    } catch (err) {
-      console.warn(err)
-    }
-  }
-
-  const handleCreateGroupWithUser = async (uid) => {
-    try {
-      const name = window.prompt('Group name (optional)', `Group with ${uid}`) || `Group with ${uid}`
-      await createGroupRoom({ name, memberIds: [uid] })
-      setAddTargetUid('')
-    } catch (err) {
-      console.warn(err)
-    }
-  }
 
   const renameRoom = async (room) => {
     const current = room.name || ''
@@ -106,35 +86,57 @@ const RoomList = () => {
     }
   }
 
-  const summary = useMemo(() => {
-    if (!search) return null
-    return `${searchResults.length} messages matched.`
-  }, [searchResults.length, search])
+  const bufferLabels = useMemo(
+    () =>
+      selectedUsers.map((uid) => {
+        const match = userSearchResults.find((item) => item.uid === uid)
+        return match?.username || match?.email || uid
+      }),
+    [selectedUsers, userSearchResults],
+  )
 
   return (
     <aside className="sidebar">
       <h2>Rooms</h2>
 
       <div className="stack">
-        <input
-          value={newRoomUser}
-          onChange={(event) => setNewRoomUser(event.target.value)}
-          placeholder="Invite UID for private room"
-        />
-        <button type="button" className="btn" onClick={createPrivate}>
-          Create private room
-        </button>
-        {error && <small className="error-text">{error}</small>}
-      </div>
+        <div className="stack">
+          <label style={{ display: 'block', marginBottom: 6 }}>Global message search</label>
+          <input
+            ref={globalInputRef}
+            value={globalQuery}
+            onChange={(event) => setGlobalQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                globalInputRef.current?.focus()
+              }
+            }}
+            placeholder="Search all messages"
+            aria-label="Search all messages"
+          />
 
-      <div className="stack">
-        <input
-          value={groupName}
-          onChange={(event) => setGroupName(event.target.value)}
-          placeholder="Group name"
-        />
+          {searchResults.length > 0 && (
+            <div className="stack">
+              {searchResults.slice(0, 12).map((item) => (
+                <button
+                  key={`${item.roomId}-${item.id}`}
+                  type="button"
+                  className="room-btn"
+                  onClick={() => {
+                    setActiveRoomId(item.roomId)
+                    setSearchTarget({ roomId: item.roomId, messageId: item.id })
+                  }}
+                >
+                  <span>{item.text || 'Media message'}</span>
+                  <small>{item.senderName || item.senderEmail}</small>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
-        <div>
+        <div className="user-search-area">
           <label style={{ display: 'block', marginBottom: 6 }}>Find people</label>
           <input
             value={userSearch}
@@ -145,99 +147,57 @@ const RoomList = () => {
           {userSearchLoading && <small> Searching users…</small>}
 
           {userSearchResults.length > 0 && (
-            <ul className="room-list" style={{ marginTop: 8 }}>
-              {userSearchResults.map((item) => (
-                <li key={item.uid} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <div style={{ flex: 1 }}>
-                    <strong>{item.username || item.email || item.uid}</strong>
-                    <div style={{ fontSize: 12, opacity: 0.8 }}>{item.email || item.uid}</div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button
-                      type="button"
-                      className="btn btn-alt"
-                      onClick={async () => {
-                        try {
-                          await createRoom({ memberIds: [item.uid], name: `${ownName} + ${item.uid}` })
-                          setUserSearch('')
-                        } catch (err) {
-                          console.warn(err)
-                        }
-                      }}
-                    >
-                      DM
-                    </button>
-                    <button type="button" className="btn" onClick={() => setAddTargetUid(item.uid)}>
-                      Add
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {selectedUsers.length > 0 && (
-            <div className="stack">
-              <small>Selected users: {selectedUsers.join(', ')}</small>
-              <div className="row-wrap">
-                {selectedUsers.map((uid) => (
-                  <button key={uid} type="button" className="action-btn" onClick={() => removeUserFromGroup(uid)}>
-                    Remove {uid}
-                  </button>
+            <div className="user-search-overlay">
+              <ul className="room-list">
+                {userSearchResults.map((item) => (
+                  <li key={item.uid} className="user-search-row">
+                    <div className="user-search-info">
+                      <strong>{item.username || item.email || item.uid}</strong>
+                      <div className="user-search-sub">{item.email || item.uid}</div>
+                    </div>
+                    <div className="user-search-actions">
+                      <button
+                        type="button"
+                        className="btn btn-alt"
+                        onClick={async () => {
+                          try {
+                            await createRoom({ memberIds: [item.uid], name: `${ownName} + ${item.uid}` })
+                            setUserSearch('')
+                          } catch (err) {
+                            console.warn(err)
+                          }
+                        }}
+                      >
+                        DM
+                      </button>
+                      <button type="button" className="btn" onClick={() => addUserToGroup(item.uid)}>
+                        Add
+                      </button>
+                    </div>
+                  </li>
                 ))}
-              </div>
-            </div>
-          )}
-
-          {addTargetUid && (
-            <div style={{ marginTop: 8, borderTop: '1px dashed rgba(255,255,255,0.06)', paddingTop: 8 }}>
-              <small>
-                Choose a group to add <strong>{addTargetUid}</strong> into:
-              </small>
-              {existingGroups.length === 0 && (
-                <div style={{ marginTop: 6 }}>No existing groups. You can create a new group.</div>
-              )}
-              {existingGroups.length > 0 && (
-                <ul className="room-list" style={{ marginTop: 6 }}>
-                  {existingGroups.map((g) => (
-                    <li key={g.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <strong>{g.name}</strong>
-                        <div style={{ fontSize: 12, opacity: 0.8 }}>{g.members.length} members</div>
-                      </div>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button type="button" className="btn btn-alt" onClick={() => handleAddToExisting(g.id, addTargetUid)}>
-                          Add to group
-                        </button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              <div style={{ marginTop: 8 }}>
-                <button type="button" className="btn" onClick={() => handleCreateGroupWithUser(addTargetUid)}>
-                  Create new group with {addTargetUid}
-                </button>
-                <button type="button" className="btn btn-ghost" style={{ marginLeft: 8 }} onClick={() => setAddTargetUid('')}>
-                  Cancel
-                </button>
-              </div>
+              </ul>
             </div>
           )}
         </div>
 
+        {selectedUsers.length > 0 && (
+          <div className="stack">
+            <small>Group buffer: {bufferLabels.join(', ')}</small>
+            <div className="row-wrap">
+              {selectedUsers.map((uid) => (
+                <button key={uid} type="button" className="action-btn" onClick={() => removeUserFromGroup(uid)}>
+                  Remove {uid}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <button type="button" className="btn" onClick={createGroup}>
           Create group chat
         </button>
-      </div>
-
-      <div className="stack">
-        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Global message search" />
-        <button type="button" className="btn btn-alt" onClick={() => searchAllMessages(search)}>
-          Search all messages
-        </button>
-        {summary && <small>{summary}</small>}
+        {error && <small className="error-text">{error}</small>}
       </div>
 
       <ul className="room-list">

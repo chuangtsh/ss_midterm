@@ -111,7 +111,7 @@ textarea {
 
 .chat-layout {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: 340px minmax(0, 1fr);
   height: 100dvh;
   overflow: hidden;
   background:
@@ -129,6 +129,7 @@ textarea {
   display: grid;
   gap: 1rem;
   align-content: start;
+  position: relative;
 }
 
 .stack {
@@ -142,6 +143,46 @@ textarea {
   margin: 0;
   display: grid;
   gap: 0.45rem;
+}
+
+.user-search-area {
+  position: relative;
+}
+
+.user-search-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 8px);
+  background: rgba(2, 6, 23, 0.96);
+  border: 1px solid rgba(59, 130, 246, 0.45);
+  border-radius: 16px;
+  padding: 0.6rem;
+  z-index: 40;
+  max-height: 60dvh;
+  overflow-y: auto;
+  box-shadow: 0 24px 48px rgba(2, 6, 23, 0.55);
+}
+
+.user-search-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.35rem 0.2rem;
+}
+
+.user-search-info {
+  flex: 1;
+}
+
+.user-search-sub {
+  font-size: 0.78rem;
+  opacity: 0.8;
+}
+
+.user-search-actions {
+  display: flex;
+  gap: 0.4rem;
 }
 
 .room-row {
@@ -163,6 +204,10 @@ textarea {
 .room-btn.active {
   background: linear-gradient(90deg, #dbeafe, #bfdbfe);
   border-color: #93c5fd;
+  position: relative;
+  overflow: hidden;
+  transform-style: preserve-3d;
+  animation: room-select 720ms cubic-bezier(0.16, 1, 0.3, 1), room-glow 2.6s ease-in-out infinite;
 }
 
 .chat-main {
@@ -199,6 +244,7 @@ textarea {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  animation: glass-breathe 6.5s ease-in-out infinite;
 }
 
 .chat-header {
@@ -224,6 +270,8 @@ textarea {
   flex: 1 1 auto;
   min-height: 0;
   overscroll-behavior: contain;
+  position: relative;
+  animation: shimmer-drift 8s ease-in-out infinite;
 }
 
 .message + .message {
@@ -525,6 +573,114 @@ textarea {
   }
 }
 
+@keyframes glass-breathe {
+  0% {
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.16);
+    transform: translateY(0);
+  }
+  50% {
+    box-shadow: 0 28px 60px rgba(15, 23, 42, 0.24);
+    transform: translateY(-2px);
+  }
+  100% {
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.16);
+    transform: translateY(0);
+  }
+}
+
+@keyframes shimmer-drift {
+  0% {
+    background-position: 0% 50%;
+    opacity: 0.98;
+  }
+  50% {
+    background-position: 100% 50%;
+    opacity: 1;
+  }
+  100% {
+    background-position: 0% 50%;
+    opacity: 0.98;
+  }
+}
+
+@keyframes room-select {
+  0% {
+    transform: translateY(4px) scale(0.97) rotateX(2deg);
+    box-shadow: 0 0 0 rgba(37, 99, 235, 0.0);
+  }
+  45% {
+    transform: translateY(-2px) scale(1.02) rotateX(0deg);
+    box-shadow: 0 18px 36px rgba(37, 99, 235, 0.26);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    box-shadow: 0 10px 22px rgba(37, 99, 235, 0.2);
+  }
+}
+
+@keyframes room-sheen {
+  0% {
+    opacity: 0;
+    transform: translateX(-35%);
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(45%);
+  }
+}
+
+@keyframes room-glow {
+  0% {
+    box-shadow: 0 10px 22px rgba(37, 99, 235, 0.18);
+  }
+  50% {
+    box-shadow: 0 18px 40px rgba(56, 189, 248, 0.28);
+  }
+  100% {
+    box-shadow: 0 10px 22px rgba(37, 99, 235, 0.18);
+  }
+}
+
+@keyframes room-aura {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes room-sparkle {
+  0% {
+    opacity: 0.1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+  100% {
+    opacity: 0.1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-window,
+  .message-list,
+  .room-btn.active {
+    animation: none;
+  }
+
+  .room-btn.active::after {
+    animation: none;
+  }
+
+  .room-btn.active::before {
+    animation: none;
+  }
+}
+
 @media (max-width: 900px) {
   .chat-layout {
     grid-template-columns: 1fr;
@@ -590,6 +746,39 @@ textarea {
 .room-btn.active {
   background: linear-gradient(90deg, rgba(30, 64, 175, 0.85), rgba(59, 130, 246, 0.8));
   border-color: rgba(147, 197, 253, 0.8);
+  position: relative;
+  overflow: hidden;
+  transform-style: preserve-3d;
+  animation: room-select 720ms cubic-bezier(0.16, 1, 0.3, 1), room-glow 2.6s ease-in-out infinite;
+}
+
+.room-btn.active::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 20% 50%, rgba(255, 255, 255, 0.4), transparent 55%),
+    linear-gradient(120deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0));
+  transform: translateX(-40%);
+  animation: room-sheen 1.4s ease-out, room-sparkle 3.2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.room-btn.active::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from 120deg,
+    rgba(255, 255, 255, 0.0),
+    rgba(255, 255, 255, 0.4),
+    rgba(255, 255, 255, 0.0)
+  );
+  opacity: 0.55;
+  filter: blur(6px);
+  animation: room-aura 3.4s linear infinite;
+  pointer-events: none;
 }
 
 .message {

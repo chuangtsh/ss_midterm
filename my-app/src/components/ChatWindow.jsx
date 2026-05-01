@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useAuth } from '../context/AuthContext'
 import { useChat } from '../context/ChatContext'
@@ -6,8 +6,8 @@ import { useChat } from '../context/ChatContext'
 const emojis = ['👍', '❤️', '😂', '😮', '🔥']
 
 const ChatWindow = ({ room, onReply }) => {
-  const { user, profile } = useAuth()
-  const { messages, editMessage, unsendMessage, toggleReaction, blockUser } = useChat()
+  const { user } = useAuth()
+  const { messages, editMessage, unsendMessage, toggleReaction, memberProfiles, searchTarget, setSearchTarget } = useChat()
   const lastReactRef = useRef(0)
   const [editingId, setEditingId] = useState('')
   const [draft, setDraft] = useState('')
@@ -19,11 +19,14 @@ const ChatWindow = ({ room, onReply }) => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [messages.length])
 
-  const canSend = useMemo(() => {
-    if (!room?.isPrivate) return true
-    const other = room.members.find((id) => id !== user?.uid)
-    return !(profile?.blockedUsers || []).includes(other)
-  }, [room, profile?.blockedUsers, user?.uid])
+  useEffect(() => {
+    if (!room || !searchTarget) return
+    if (searchTarget.roomId !== room.id) return
+    const exists = messages.some((message) => message.id === searchTarget.messageId)
+    if (!exists) return
+    jumpToMessage(searchTarget.messageId)
+    setSearchTarget(null)
+  }, [messages, room, searchTarget, setSearchTarget])
 
   const jumpToMessage = (messageId) => {
     const node = refs.current[messageId]
@@ -44,22 +47,13 @@ const ChatWindow = ({ room, onReply }) => {
     setDraft('')
   }
 
-  const otherMember = room?.members.find((id) => id !== user?.uid)
-
   return (
     <section className="chat-window">
       <header className="chat-header">
         <div>
           <h2>{room?.name || 'Choose a room'}</h2>
           {room && <small>{room.isPrivate ? 'Private chat' : 'Group chat'}</small>}
-          {!canSend && <p className="warning">You blocked this user. Direct messages are disabled.</p>}
         </div>
-
-        {room?.isPrivate && otherMember && (
-          <button type="button" className="btn btn-ghost" onClick={() => blockUser(otherMember)}>
-            Block user
-          </button>
-        )}
       </header>
 
       <div className="message-list">
@@ -76,7 +70,7 @@ const ChatWindow = ({ room, onReply }) => {
               animate={{ opacity: 1, y: 0 }}
             >
               <div className="message-head">
-                <img src={message.senderPhoto || '/vite.svg'} alt="avatar" />
+                <img src={memberProfiles?.[message.senderId]?.photoURL || message.senderPhoto || '/vite.svg'} alt="avatar" />
                 <span className="sender">{message.senderName || message.senderEmail}</span>
               </div>
 

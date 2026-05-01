@@ -1,8 +1,6 @@
-import DOMPurify from 'dompurify'
-
 export const sanitizeText = (input = '') => {
-  const cleaned = DOMPurify.sanitize(input, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] })
-  return cleaned.trim()
+  if (typeof input !== 'string') return ''
+  return input.trim()
 }
 
 export const tokenize = (input = '') => {

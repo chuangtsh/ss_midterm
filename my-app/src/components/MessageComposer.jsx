@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { askBot } from '../services/chatbot'
 
 const MessageComposer = ({
   onSend,
@@ -96,21 +95,6 @@ const MessageComposer = ({
     }
   }
 
-  const sendBotMessage = async () => {
-    if (!text.trim()) return
-    setBusy(true)
-    setLocalError('')
-    try {
-      const answer = await askBot(text)
-      await runWithTimeout(() => onSend({ text: `🤖 ${answer}` }))
-      setText('')
-    } catch (err) {
-      setLocalError(err.message || 'Bot request failed.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
   return (
     <div className="composer-wrap">
       {replyTo && (
@@ -150,10 +134,6 @@ const MessageComposer = ({
 
           <button className="tool-btn" type="button" onClick={onOpenSticker} disabled={disabled || busy} title="Draw sticker">
             ✏️
-          </button>
-
-          <button className="tool-btn" type="button" onClick={sendBotMessage} disabled={disabled || busy} title="Ask bot">
-            AI
           </button>
 
           <input

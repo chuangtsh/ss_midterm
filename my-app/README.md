@@ -12,7 +12,6 @@ This project now includes a production-style chatroom scaffold with:
 - Profile modal with editable fields
 - Message input sanitization
 - Global message search
-- Basic block user flow for direct messaging
 - Notification API hook for unread alerts
 
 ## 1) Folder structure
@@ -31,8 +30,6 @@ src/
 ├─ pages/
 │  ├─ AuthPage.jsx
 │  └─ ChatPage.jsx
-├─ services/
-│  └─ chatbot.js
 ├─ utils/
 │  └─ sanitize.js
 ├─ App.css
@@ -65,20 +62,12 @@ Create [.env.local](.env.local):
 
 ```bash
 VITE_TENOR_API_KEY=your_tenor_key
-VITE_BOT_PROVIDER=openai
-VITE_OPENAI_API_KEY=your_openai_key
-VITE_OPENAI_MODEL=gpt-4.1-mini
-# OR
-# VITE_BOT_PROVIDER=gemini
-# VITE_GEMINI_API_KEY=your_gemini_key
 ```
-
-For production, use Firebase Functions as a proxy for AI API keys.
 
 ## 5) Realtime Database data model
 
 - users/{uid}/profile
-	- username, usernameLower, email, emailLower, phone, address, photoURL, blockedUsers[]
+	- username, usernameLower, email, emailLower, phone, address, photoURL
 - rooms/{roomId}
 	- name, isPrivate, members: { uid: true }, createdBy, createdAt, updatedAt
 - messages/{roomId}/{messageId}
@@ -142,6 +131,5 @@ firebase deploy
 ## 9) Notes for remaining hardening
 
 - Move AI requests to Firebase Functions (secret-safe)
-- Add Cloud Functions to enforce bidirectional block policy server-side
 - Add a server-side search index if global message search volume grows
 - Add optional service worker if you need true background push notifications
