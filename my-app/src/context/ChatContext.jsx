@@ -4,6 +4,7 @@ import {
   equalTo,
   get,
   limitToFirst,
+  limitToLast,
   off,
   onValue,
   orderByChild,
@@ -42,6 +43,7 @@ export const ChatProvider = ({ children }) => {
   const [searchTarget, setSearchTarget] = useState(null)
   const [blockedUserIds, setBlockedUserIds] = useState([])
   const [blockedByUserIds, setBlockedByUserIds] = useState([])
+  const [roomLatestMessages, setRoomLatestMessages] = useState({})
 
   const blockedUserSet = useMemo(() => new Set(blockedUserIds), [blockedUserIds])
   const blockedByUserSet = useMemo(() => new Set(blockedByUserIds), [blockedByUserIds])
@@ -206,6 +208,55 @@ export const ChatProvider = ({ children }) => {
 
     return () => off(roomsRef, 'value', onRooms)
   }, [user, activeRoomId])
+
+  useEffect(() => {
+    if (!user || rooms.length === 0) {
+      setRoomLatestMessages({})
+      return
+    }
+
+    const handlers = new Map()
+
+    rooms.forEach((room) => {
+      const roomId = room.id
+      const latestRef = query(
+        rtdbRef(rtdb, `messages/${roomId}`),
+        orderByChild('createdAtMs'),
+        limitToLast(1),
+      )
+      const handler = (snapshot) => {
+        if (!snapshot.exists()) {
+          setRoomLatestMessages((prev) => {
+            if (!prev[roomId]) return prev
+            const next = { ...prev }
+            delete next[roomId]
+            return next
+          })
+          return
+        }
+        const value = snapshot.val() || {}
+        const [id, message] = Object.entries(value)[0] || []
+        if (!id || !message) return
+        setRoomLatestMessages((prev) => ({
+          ...prev,
+          [roomId]: { id, ...message },
+        }))
+      }
+      handlers.set(roomId, handler)
+      onValue(latestRef, handler, () => {})
+    })
+
+    return () => {
+      handlers.forEach((handler, roomId) => {
+        const latestRef = query(
+          rtdbRef(rtdb, `messages/${roomId}`),
+          orderByChild('createdAtMs'),
+          limitToLast(1),
+        )
+        off(latestRef, 'value', handler)
+      })
+    }
+  }, [rooms, user])
 
   useEffect(() => {
     if (!user || !activeRoomId) return
@@ -859,6 +910,7 @@ export const ChatProvider = ({ children }) => {
     chatError,
     blockedUserIds,
     blockedByUserIds,
+    roomLatestMessages,
     createRoom,
     createGroupRoom,
     updateRoomIdentifier,

@@ -112,6 +112,9 @@ textarea {
 .chat-layout {
   display: grid;
   grid-template-columns: 420px minmax(0, 1fr);
+  .chat-layout.sidebar-collapsed {
+    grid-template-columns: 0 minmax(0, 1fr);
+  }
   height: 100dvh;
   overflow: hidden;
   background:
@@ -130,6 +133,34 @@ textarea {
   gap: 1rem;
   align-content: start;
   position: relative;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.sidebar.collapsed {
+  padding: 0;
+  width: 0;
+  min-width: 0;
+  overflow: hidden;
+  border-right: 0;
+}
+
+.sidebar.collapsed .stack {
+  display: none;
+}
+
+.sidebar.collapsed .room-row .action-btn {
+  display: none;
+}
+
+.sidebar.collapsed .room-btn {
+  justify-content: center;
+  padding: 0.6rem 0.5rem;
 }
 
 .stack {

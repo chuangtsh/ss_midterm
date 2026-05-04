@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useRef } from 'react'
 import { useChat } from '../context/ChatContext'
 import { useAuth } from '../context/AuthContext'
 
-const RoomList = () => {
+const RoomList = ({ collapsed = false, onToggleCollapse }) => {
   const {
     rooms,
     activeRoomId,
@@ -104,8 +104,19 @@ const RoomList = () => {
   const showUserOverlay = trimmedUserSearch.length > 0
 
   return (
-    <aside className="sidebar">
-      <h2>Rooms</h2>
+    <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
+      <div className="sidebar-header">
+        <h2>Rooms</h2>
+        <button
+          type="button"
+          className="action-btn"
+          onClick={onToggleCollapse}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {collapsed ? '⮞' : '⮜'}
+        </button>
+      </div>
 
       <div className="stack">
         <div className="stack">
@@ -213,17 +224,27 @@ const RoomList = () => {
       </div>
 
       <ul className="room-list">
-        {rooms.map((room) => (
-          <li key={room.id} className="room-row">
-            <button className={`room-btn ${room.id === activeRoomId ? 'active' : ''}`} onClick={() => setActiveRoomId(room.id)} type="button">
-              <span>{room.name}</span>
-              <small>{room.isBot ? 'AI Bot' : room.isPrivate ? 'Private' : 'Group'}</small>
-            </button>
-            <button className="action-btn" onClick={() => renameRoom(room)} type="button">
-              Rename
-            </button>
-          </li>
-        ))}
+        {rooms.map((room) => {
+          const displayName = collapsed ? (room.name || 'Room').slice(0, 2).toUpperCase() : room.name
+          return (
+            <li key={room.id} className="room-row">
+              <button
+                className={`room-btn ${room.id === activeRoomId ? 'active' : ''}`}
+                onClick={() => setActiveRoomId(room.id)}
+                type="button"
+                title={room.name}
+              >
+                <span>{displayName}</span>
+                {!collapsed && <small>{room.isBot ? 'AI Bot' : room.isPrivate ? 'Private' : 'Group'}</small>}
+              </button>
+              {!collapsed && (
+                <button className="action-btn" onClick={() => renameRoom(room)} type="button">
+                  Rename
+                </button>
+              )}
+            </li>
+          )
+        })}
       </ul>
     </aside>
   )

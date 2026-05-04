@@ -8,14 +8,22 @@ import ProfileModal from '../components/ProfileModal'
 
 const ChatPage = () => {
   const { user, logout } = useAuth()
-  const { rooms, activeRoomId, sendMessage, chatError, messages, getRoomBlockState } = useChat()
+  const {
+    rooms,
+    activeRoomId,
+    sendMessage,
+    chatError,
+    getRoomBlockState,
+    roomLatestMessages,
+  } = useChat()
 
   const [profileOpen, setProfileOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [replyTo, setReplyTo] = useState(null)
   const [notificationPermission, setNotificationPermission] = useState(
     typeof Notification !== 'undefined' ? Notification.permission : 'denied',
   )
-  const lastNotifiedId = useRef('')
+  const lastNotifiedId = useRef(new Map())
 
   const room = useMemo(() => rooms.find((item) => item.id === activeRoomId), [rooms, activeRoomId])
   const roomError = useMemo(
@@ -43,28 +51,49 @@ const ChatPage = () => {
   }
 
   useEffect(() => {
-    if (!room || !user) return
-    if (document.visibilityState === 'visible') return
+    if (!user) return
     if (notificationPermission !== 'granted') return
-    if (!messages.length) return
 
-    const latest = messages[messages.length - 1]
-    if (!latest || latest.senderId === user.uid) return
-    if (latest.id && latest.id === lastNotifiedId.current) return
+    const roomNameById = Object.fromEntries(rooms.map((item) => [item.id, item.name]))
+    const isVisible = document.visibilityState === 'visible'
 
-    lastNotifiedId.current = latest.id || ''
-    new Notification(`New message in ${room.name}`, {
-      body: latest.text ? latest.text.slice(0, 120) : 'Open chat to read new updates.',
+    Object.entries(roomLatestMessages).forEach(([roomId, latest]) => {
+      if (!latest || latest.senderId === user.uid) return
+      if (isVisible && roomId === activeRoomId) return
+
+      const key = `${roomId}:${latest.id}`
+      if (lastNotifiedId.current.get(roomId) === key) return
+
+      lastNotifiedId.current.set(roomId, key)
+      new Notification(`New message in ${roomNameById[roomId] || 'a room'}`, {
+        body: latest.text ? latest.text.slice(0, 120) : 'Open chat to read new updates.',
+      })
     })
-  }, [room, user, messages, notificationPermission])
+  }, [rooms, user, roomLatestMessages, activeRoomId, notificationPermission])
 
   return (
-    <div className="chat-layout">
-      <RoomList />
+    <div className={`chat-layout ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+      <RoomList
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
+      />
 
       <main className="chat-main">
         <div className="top-row">
-          <h1>Realtime Chatroom</h1>
+          <div className="row-wrap">
+            {sidebarCollapsed && (
+              <button
+                className="action-btn"
+                type="button"
+                onClick={() => setSidebarCollapsed(false)}
+                aria-label="Expand sidebar"
+                title="Expand sidebar"
+              >
+                ☰
+              </button>
+            )}
+            <h1>Realtime Chatroom</h1>
+          </div>
           <div className="row-wrap">
             {'Notification' in window && notificationPermission !== 'granted' && (
               <button className="btn btn-ghost" type="button" onClick={requestNotifications}>
