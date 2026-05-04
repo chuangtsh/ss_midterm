@@ -2,11 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 const MessageComposer = ({
   onSend,
-  onOpenSticker,
   onCancelReply,
   replyTo,
   error,
   disabled,
+  disabledReason,
 }) => {
   const [text, setText] = useState('')
   const [imageFile, setImageFile] = useState(null)
@@ -97,6 +97,7 @@ const MessageComposer = ({
 
   return (
     <div className="composer-wrap">
+      {disabledReason && <div className="notice-banner warning">{disabledReason}</div>}
       {replyTo && (
         <div className="reply-preview">
           Replying to <b>{replyTo.senderName}</b>: {replyTo.text || 'Media message'}
@@ -130,10 +131,6 @@ const MessageComposer = ({
             title="GIF"
           >
             GIF
-          </button>
-
-          <button className="tool-btn" type="button" onClick={onOpenSticker} disabled={disabled || busy} title="Draw sticker">
-            ✏️
           </button>
 
           <input

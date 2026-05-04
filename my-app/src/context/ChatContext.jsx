@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import {
   endAt,
   equalTo,
@@ -24,6 +24,7 @@ import {
 import { rtdb, storage } from '../../firebase_config'
 import { useAuth } from './AuthContext'
 import { sanitizeText, tokenize } from '../utils/sanitize'
+import { CHATBOT_PROFILE, CHATBOT_UID, generateChatbotReply } from '../services/chatbot'
 
 const ChatContext = createContext(null)
 
@@ -37,8 +38,13 @@ export const ChatProvider = ({ children }) => {
   const [searchResults, setSearchResults] = useState([])
   const [userSearchResults, setUserSearchResults] = useState([])
   const [userSearchLoading, setUserSearchLoading] = useState(false)
-  const [chatError, setChatError] = useState('')
+  const [chatError, setChatError] = useState({ roomId: '', message: '' })
   const [searchTarget, setSearchTarget] = useState(null)
+  const [blockedUserIds, setBlockedUserIds] = useState([])
+  const [blockedByUserIds, setBlockedByUserIds] = useState([])
+
+  const blockedUserSet = useMemo(() => new Set(blockedUserIds), [blockedUserIds])
+  const blockedByUserSet = useMemo(() => new Set(blockedByUserIds), [blockedByUserIds])
 
   const normalizeMembers = (members) => {
     if (Array.isArray(members)) return members
@@ -71,12 +77,86 @@ export const ChatProvider = ({ children }) => {
       }
     })
 
-    return merged.sort((a, b) => {
+    return merged
+      .filter((message) => {
+        const senderId = message?.senderId
+        if (!senderId) return true
+        if (senderId === user?.uid) return true
+        if (senderId === CHATBOT_UID) return true
+        if (blockedUserSet.has(senderId)) return false
+        if (blockedByUserSet.has(senderId)) return false
+        return true
+      })
+      .sort((a, b) => {
       const aTime = a?.createdAtMs || 0
       const bTime = b?.createdAtMs || 0
       return aTime - bTime
     })
-  }, [remoteMessages, pendingMessages])
+  }, [remoteMessages, pendingMessages, user, blockedUserSet, blockedByUserSet])
+
+  const ensureChatbotProfile = useCallback(async () => {
+    const profileRef = rtdbRef(rtdb, `users/${CHATBOT_UID}/profile`)
+    const snapshot = await get(profileRef)
+    if (!snapshot.exists()) {
+      await set(profileRef, {
+        ...CHATBOT_PROFILE,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })
+    }
+  }, [])
+
+  const ensureChatbotRoom = useCallback(async () => {
+    if (!user) return
+    const roomId = `bot_${user.uid}`
+    const roomRef = rtdbRef(rtdb, `rooms/${roomId}`)
+    const snapshot = await get(roomRef)
+    if (snapshot.exists()) return
+
+    await set(roomRef, {
+      name: 'AI Assistant',
+      identifier: roomId,
+      isPrivate: true,
+      isBot: true,
+      members: {
+        [user.uid]: true,
+        [CHATBOT_UID]: true,
+      },
+      createdBy: user.uid,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    })
+
+    const greetingRef = push(rtdbRef(rtdb, `messages/${roomId}`))
+    if (greetingRef.key) {
+      await set(greetingRef, {
+        clientId: `bot-${Date.now()}`,
+        createdAtMs: Date.now(),
+        roomId,
+        participants: [user.uid, CHATBOT_UID],
+        senderId: CHATBOT_UID,
+        senderEmail: CHATBOT_PROFILE.email,
+        senderName: CHATBOT_PROFILE.username,
+        senderPhoto: CHATBOT_PROFILE.photoURL,
+        text: 'Hi! I’m your AI assistant. Ask me anything, and I’ll reply here.',
+        searchTokens: tokenize('Hi! I’m your AI assistant. Ask me anything, and I’ll reply here.'),
+        imageUrl: '',
+        imagePath: '',
+        gifUrl: '',
+        sticker: null,
+        replyToId: '',
+        replyPreview: null,
+        reactions: {},
+        updatedAt: Date.now(),
+      })
+    }
+  }, [user])
+
+  useEffect(() => {
+    if (!user) return
+    ensureChatbotProfile().catch(() => {})
+    ensureChatbotRoom().catch(() => {})
+  }, [user, ensureChatbotProfile, ensureChatbotRoom])
 
   useEffect(() => {
     if (!user) {
@@ -119,7 +199,7 @@ export const ChatProvider = ({ children }) => {
     }
 
     const onRoomsError = (error) => {
-      setChatError(error.message || 'Failed to load rooms.')
+      setChatError({ roomId: '', message: error.message || 'Failed to load rooms.' })
     }
 
     onValue(roomsRef, onRooms, onRoomsError)
@@ -159,13 +239,18 @@ export const ChatProvider = ({ children }) => {
     }
 
     const onMessagesError = (error) => {
-      setChatError(error.message || 'Failed to load messages.')
+      setChatError({ roomId: activeRoomId, message: error.message || 'Failed to load messages.' })
     }
 
     onValue(messagesRef, onMessages, onMessagesError)
 
     return () => off(messagesRef, 'value', onMessages)
   }, [activeRoomId, user])
+
+  useEffect(() => {
+    if (!activeRoomId) return
+    setChatError((prev) => (prev.roomId && prev.roomId !== activeRoomId ? { roomId: '', message: '' } : prev))
+  }, [activeRoomId])
 
   useEffect(() => {
     if (!user || !activeRoomId) {
@@ -198,6 +283,62 @@ export const ChatProvider = ({ children }) => {
     return () => {
       handlers.forEach((handler, uid) => {
         off(rtdbRef(rtdb, `users/${uid}/profile`), 'value', handler)
+      })
+    }
+  }, [activeRoomId, rooms, user])
+
+  useEffect(() => {
+    if (!user) {
+      setBlockedUserIds([])
+      return
+    }
+
+    const blockedRef = rtdbRef(rtdb, `users/${user.uid}/blocked`)
+    const onBlocked = (snapshot) => {
+      const value = snapshot.val() || {}
+      setBlockedUserIds(Object.keys(value).filter((uid) => Boolean(value[uid])))
+    }
+
+    onValue(blockedRef, onBlocked)
+    return () => off(blockedRef, 'value', onBlocked)
+  }, [user])
+
+  useEffect(() => {
+    if (!user || !activeRoomId) {
+      setBlockedByUserIds([])
+      return
+    }
+
+    const room = rooms.find((item) => item.id === activeRoomId)
+    const members = (room?.members || []).filter((uid) => uid && uid !== user.uid)
+    if (members.length === 0) {
+      setBlockedByUserIds([])
+      return
+    }
+
+    const handlers = new Map()
+
+    members.forEach((uid) => {
+      const blockedRef = rtdbRef(rtdb, `users/${uid}/blocked/${user.uid}`)
+      const handler = (snapshot) => {
+        const isBlocked = Boolean(snapshot.exists() && snapshot.val())
+        setBlockedByUserIds((prev) => {
+          const next = new Set(prev)
+          if (isBlocked) {
+            next.add(uid)
+          } else {
+            next.delete(uid)
+          }
+          return Array.from(next)
+        })
+      }
+      handlers.set(uid, handler)
+      onValue(blockedRef, handler, () => {})
+    })
+
+    return () => {
+      handlers.forEach((handler, uid) => {
+        off(rtdbRef(rtdb, `users/${uid}/blocked/${user.uid}`), 'value', handler)
       })
     }
   }, [activeRoomId, rooms, user])
@@ -263,6 +404,17 @@ export const ChatProvider = ({ children }) => {
       const roomRef = rtdbRef(rtdb, `rooms/${roomId}`)
       const existing = await get(roomRef)
       const memberMap = Object.fromEntries(sorted.map((uid) => [uid, true]))
+      const otherUid = sorted.find((uid) => uid !== user.uid)
+
+      if (otherUid) {
+        if (blockedUserSet.has(otherUid)) {
+          throw new Error('You blocked this user. Unblock them to start a chat.')
+        }
+        const blockedBy = await get(rtdbRef(rtdb, `users/${otherUid}/blocked/${user.uid}`)).catch(() => null)
+        if (blockedBy?.exists() && blockedBy.val()) {
+          throw new Error('This user has blocked you. You cannot start a direct chat.')
+        }
+      }
 
       if (!existing.exists()) {
         await set(roomRef, {
@@ -367,7 +519,7 @@ export const ChatProvider = ({ children }) => {
 
   const sendMessage = async ({ roomId, text, imageFile, gifUrl, sticker, replyTo }) => {
     if (!user || !roomId) return
-    setChatError('')
+    setChatError({ roomId: '', message: '' })
 
     const room = rooms.find((item) => item.id === roomId)
     if (!room) {
@@ -378,6 +530,18 @@ export const ChatProvider = ({ children }) => {
     const hasContent = cleanText || imageFile || gifUrl || sticker
     if (!hasContent) {
       throw new Error('Type a message or attach media before sending.')
+    }
+
+    if (room.isPrivate && !room.isBot) {
+      const otherUid = room.members.find((uid) => uid !== user.uid)
+      if (otherUid) {
+        if (blockedUserSet.has(otherUid)) {
+          throw new Error('You blocked this user. Unblock them to chat.')
+        }
+        if (blockedByUserSet.has(otherUid)) {
+          throw new Error('You can no longer chat with this user.')
+        }
+      }
     }
 
     let image = null
@@ -428,12 +592,68 @@ export const ChatProvider = ({ children }) => {
       if (!msgRef.key) throw new Error('Failed to create message.')
       await set(msgRef, payload)
       update(rtdbRef(rtdb, `rooms/${roomId}`), { updatedAt: Date.now() }).catch(() => {})
+      if (room.isBot) {
+        triggerBotReply({ roomId, incoming: payload }).catch((error) => {
+          setChatError({ roomId, message: error?.message || 'AI bot failed to respond.' })
+        })
+      }
     } catch (error) {
       const message = error?.message || 'Failed to send message.'
-      setChatError(message)
+      setChatError({ roomId, message })
       setPendingMessages((prev) => prev.filter((item) => item.clientId !== clientId))
       throw error
     }
+  }
+
+  const triggerBotReply = async ({ roomId, incoming }) => {
+    if (!roomId || !user) return
+    if (incoming?.senderId === CHATBOT_UID) return
+
+    const recent = [...messages, incoming]
+      .filter((message) => message?.text)
+      .slice(-12)
+      .map((message) => ({
+        role: message.senderId === CHATBOT_UID ? 'assistant' : 'user',
+        content: message.text,
+      }))
+
+    if (recent.length === 0) return
+
+    const reply = await generateChatbotReply({
+      messages: recent,
+      systemPrompt: 'You are a helpful, friendly AI assistant inside a realtime chat app.',
+    })
+
+    const cleanReply = sanitizeText(reply)
+    if (!cleanReply) return
+
+    const botPayload = {
+      clientId: `bot-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      createdAtMs: Date.now(),
+      roomId,
+      participants: [user.uid, CHATBOT_UID],
+      senderId: CHATBOT_UID,
+      senderEmail: CHATBOT_PROFILE.email,
+      senderName: CHATBOT_PROFILE.username,
+      senderPhoto: CHATBOT_PROFILE.photoURL,
+      text: cleanReply,
+      searchTokens: tokenize(cleanReply),
+      imageUrl: '',
+      imagePath: '',
+      gifUrl: '',
+      sticker: null,
+      replyToId: incoming?.id || '',
+      replyPreview: incoming?.text
+        ? { senderName: incoming.senderName || 'You', text: incoming.text }
+        : null,
+      reactions: {},
+      updatedAt: Date.now(),
+    }
+
+    const msgRef = push(rtdbRef(rtdb, `messages/${roomId}`))
+    if (!msgRef.key) return
+    await set(msgRef, botPayload)
+    update(rtdbRef(rtdb, `rooms/${roomId}`), { updatedAt: Date.now() }).catch(() => {})
   }
 
   const editMessage = async ({ roomId, messageId, text }) => {
@@ -496,6 +716,10 @@ export const ChatProvider = ({ children }) => {
       const roomId = roomIds[index]
       const entries = Object.entries(snapshot.val() || {})
       entries.forEach(([id, value]) => {
+        const senderId = value?.senderId
+        if (senderId && senderId !== CHATBOT_UID) {
+          if (blockedUserSet.has(senderId) || blockedByUserSet.has(senderId)) return
+        }
         const tokens = Array.isArray(value?.searchTokens) ? value.searchTokens : []
         const textMatch = typeof value?.text === 'string' && value.text.toLowerCase().includes(safe)
         if (tokens.includes(safe) || textMatch) {
@@ -568,10 +792,58 @@ export const ChatProvider = ({ children }) => {
     }
   }
 
-
-  const sendSticker = async ({ roomId, sticker, replyTo }) => {
-    await sendMessage({ roomId, sticker, replyTo })
+  const blockUser = async (targetUid) => {
+    if (!user || !targetUid || targetUid === user.uid) return
+    await set(rtdbRef(rtdb, `users/${user.uid}/blocked/${targetUid}`), true)
   }
+
+  const unblockUser = async (targetUid) => {
+    if (!user || !targetUid || targetUid === user.uid) return
+    await remove(rtdbRef(rtdb, `users/${user.uid}/blocked/${targetUid}`))
+  }
+
+  const getRoomBlockState = useCallback(
+    (room) => {
+      if (!room || !user) {
+        return {
+          otherUid: '',
+          userBlockedOther: false,
+          blockedByOther: false,
+          canChat: true,
+        }
+      }
+
+      if (!room.isPrivate) {
+        return {
+          otherUid: '',
+          userBlockedOther: false,
+          blockedByOther: false,
+          canChat: true,
+        }
+      }
+
+      const otherUid = (room.members || []).find((uid) => uid !== user.uid) || ''
+      if (!otherUid || otherUid === CHATBOT_UID) {
+        return {
+          otherUid,
+          userBlockedOther: false,
+          blockedByOther: false,
+          canChat: true,
+        }
+      }
+
+      const userBlockedOther = blockedUserSet.has(otherUid)
+      const blockedByOther = blockedByUserSet.has(otherUid)
+      return {
+        otherUid,
+        userBlockedOther,
+        blockedByOther,
+        canChat: !(userBlockedOther || blockedByOther),
+      }
+    },
+    [user, blockedUserSet, blockedByUserSet],
+  )
+
 
   const value = {
     rooms,
@@ -585,18 +857,22 @@ export const ChatProvider = ({ children }) => {
     userSearchResults,
     userSearchLoading,
     chatError,
+    blockedUserIds,
+    blockedByUserIds,
     createRoom,
     createGroupRoom,
     updateRoomIdentifier,
     updateRoomName,
     inviteMembers,
     sendMessage,
-    sendSticker,
     editMessage,
     unsendMessage,
     toggleReaction,
     searchAllMessages,
     searchUsers,
+    blockUser,
+    unblockUser,
+    getRoomBlockState,
   }
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>

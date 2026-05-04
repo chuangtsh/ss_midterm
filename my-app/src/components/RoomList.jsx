@@ -31,25 +31,28 @@ const RoomList = () => {
 
   const ownName = profile?.username || 'me'
 
-  const addUserToGroup = (uid) => {
-    setSelectedUsers((prev) => (prev.includes(uid) ? prev : [...prev, uid]))
+  const getUserLabel = (userItem, fallbackUid) => {
+    if (!userItem && fallbackUid) {
+      const match = userSearchResults.find((item) => item.uid === fallbackUid)
+      return match?.username || match?.email || fallbackUid
+    }
+    return userItem?.username || userItem?.email || userItem?.uid || fallbackUid || ''
+  }
+
+  const addUserToGroup = (userItem) => {
+    if (!userItem?.uid) return
+    setSelectedUsers((prev) => (prev.some((item) => item.uid === userItem.uid) ? prev : [...prev, userItem]))
   }
 
   const removeUserFromGroup = (uid) => {
-    setSelectedUsers((prev) => prev.filter((item) => item !== uid))
+    setSelectedUsers((prev) => prev.filter((item) => item.uid !== uid))
   }
 
   const createGroup = async () => {
     setError('')
     try {
-      const defaultName = selectedUsers
-        .map((uid) => {
-          const match = userSearchResults.find((item) => item.uid === uid)
-          return match?.username || match?.email || uid
-        })
-        .filter(Boolean)
-        .join(', ')
-      await createGroupRoom({ name: defaultName || 'Group Chat', memberIds: selectedUsers })
+      const defaultName = selectedUsers.map((item) => getUserLabel(item)).filter(Boolean).join(', ')
+      await createGroupRoom({ name: defaultName || 'Group Chat', memberIds: selectedUsers.map((item) => item.uid) })
       setUserSearch('')
       setSelectedUsers([])
     } catch (err) {
@@ -70,8 +73,15 @@ const RoomList = () => {
   }, [globalQuery, searchAllMessages])
 
   useEffect(() => {
-    if (debouncedQuery && debouncedQuery.trim()) searchUsers(debouncedQuery)
-  }, [debouncedQuery])
+    searchUsers(debouncedQuery)
+  }, [debouncedQuery, searchUsers])
+
+  useEffect(() => {
+    if (userSearch.trim()) return
+    if (debouncedRef.current) clearTimeout(debouncedRef.current)
+    setDebouncedQuery('')
+    searchUsers('')
+  }, [userSearch, searchUsers])
 
   const renameRoom = async (room) => {
     const current = room.name || ''
@@ -86,14 +96,12 @@ const RoomList = () => {
     }
   }
 
-  const bufferLabels = useMemo(
-    () =>
-      selectedUsers.map((uid) => {
-        const match = userSearchResults.find((item) => item.uid === uid)
-        return match?.username || match?.email || uid
-      }),
-    [selectedUsers, userSearchResults],
-  )
+  const bufferLabels = useMemo(() => selectedUsers.map((item) => getUserLabel(item)), [selectedUsers])
+
+  const trimmedUserSearch = userSearch.trim()
+  const trimmedDebounced = debouncedQuery.trim()
+  const userSearchPending = trimmedUserSearch.length > 0 && trimmedDebounced !== trimmedUserSearch
+  const showUserOverlay = trimmedUserSearch.length > 0
 
   return (
     <aside className="sidebar">
@@ -144,39 +152,43 @@ const RoomList = () => {
             placeholder="Search users by username/email"
             aria-label="Find users"
           />
-          {userSearchLoading && <small> Searching users…</small>}
-
-          {userSearchResults.length > 0 && (
+          {showUserOverlay && (
             <div className="user-search-overlay">
-              <ul className="room-list">
-                {userSearchResults.map((item) => (
-                  <li key={item.uid} className="user-search-row">
-                    <div className="user-search-info">
-                      <strong>{item.username || item.email || item.uid}</strong>
-                      <div className="user-search-sub">{item.email || item.uid}</div>
-                    </div>
-                    <div className="user-search-actions">
-                      <button
-                        type="button"
-                        className="btn btn-alt"
-                        onClick={async () => {
-                          try {
-                            await createRoom({ memberIds: [item.uid], name: `${ownName} + ${item.uid}` })
-                            setUserSearch('')
-                          } catch (err) {
-                            console.warn(err)
-                          }
-                        }}
-                      >
-                        DM
-                      </button>
-                      <button type="button" className="btn" onClick={() => addUserToGroup(item.uid)}>
-                        Add
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+              {!userSearchLoading && !userSearchPending && userSearchResults.length === 0 && (
+                <div className="user-search-status">No users found.</div>
+              )}
+              {userSearchResults.length > 0 && (
+                <ul className="room-list">
+                  {userSearchResults.map((item) => (
+                    <li key={item.uid} className="user-search-row">
+                      <div className="user-search-info">
+                        <strong>{item.username || item.email || item.uid}</strong>
+                        <div className="user-search-sub">{item.email || item.uid}</div>
+                      </div>
+                      <div className="user-search-actions">
+                        <button
+                          type="button"
+                          className="btn btn-alt"
+                          onClick={async () => {
+                            try {
+                              const label = item.username || item.email || item.uid
+                              await createRoom({ memberIds: [item.uid], name: `${ownName} + ${label}` })
+                              setUserSearch('')
+                            } catch (err) {
+                              console.warn(err)
+                            }
+                          }}
+                        >
+                          DM
+                        </button>
+                        <button type="button" className="btn" onClick={() => addUserToGroup(item)}>
+                          Add
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           )}
         </div>
@@ -185,9 +197,9 @@ const RoomList = () => {
           <div className="stack">
             <small>Group buffer: {bufferLabels.join(', ')}</small>
             <div className="row-wrap">
-              {selectedUsers.map((uid) => (
-                <button key={uid} type="button" className="action-btn" onClick={() => removeUserFromGroup(uid)}>
-                  Remove {uid}
+              {selectedUsers.map((item) => (
+                <button key={item.uid} type="button" className="action-btn" onClick={() => removeUserFromGroup(item.uid)}>
+                  Remove {getUserLabel(item, item.uid)}
                 </button>
               ))}
             </div>
@@ -205,7 +217,7 @@ const RoomList = () => {
           <li key={room.id} className="room-row">
             <button className={`room-btn ${room.id === activeRoomId ? 'active' : ''}`} onClick={() => setActiveRoomId(room.id)} type="button">
               <span>{room.name}</span>
-              <small>{room.isPrivate ? 'Private' : 'Group'}</small>
+              <small>{room.isBot ? 'AI Bot' : room.isPrivate ? 'Private' : 'Group'}</small>
             </button>
             <button className="action-btn" onClick={() => renameRoom(room)} type="button">
               Rename

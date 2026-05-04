@@ -1,19 +1,45 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useAuth } from '../context/AuthContext'
 import { useChat } from '../context/ChatContext'
+import { CHATBOT_UID } from '../services/chatbot'
 
 const emojis = ['👍', '❤️', '😂', '😮', '🔥']
 
 const ChatWindow = ({ room, onReply }) => {
   const { user } = useAuth()
-  const { messages, editMessage, unsendMessage, toggleReaction, memberProfiles, searchTarget, setSearchTarget } = useChat()
+  const {
+    messages,
+    editMessage,
+    unsendMessage,
+    toggleReaction,
+    memberProfiles,
+    searchTarget,
+    setSearchTarget,
+    blockUser,
+    unblockUser,
+    getRoomBlockState,
+    blockedUserIds,
+  } = useChat()
   const lastReactRef = useRef(0)
   const [editingId, setEditingId] = useState('')
   const [draft, setDraft] = useState('')
   const [highlightId, setHighlightId] = useState('')
+  const [membersOpen, setMembersOpen] = useState(false)
   const refs = useRef({})
   const endRef = useRef(null)
+  const blockState = useMemo(() => getRoomBlockState(room), [getRoomBlockState, room])
+  const otherProfile = blockState.otherUid ? memberProfiles?.[blockState.otherUid] : null
+  const blockLabel = otherProfile?.username || otherProfile?.email || blockState.otherUid || 'this user'
+  const blockedMembers = useMemo(() => {
+    if (!room || room.isPrivate) return []
+    return (room.members || [])
+      .filter((uid) => uid && uid !== user?.uid && blockedUserIds.includes(uid))
+      .map((uid) => ({
+        uid,
+        label: memberProfiles?.[uid]?.username || memberProfiles?.[uid]?.email || uid,
+      }))
+  }, [room, user, blockedUserIds, memberProfiles])
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
@@ -54,7 +80,51 @@ const ChatWindow = ({ room, onReply }) => {
           <h2>{room?.name || 'Choose a room'}</h2>
           {room && <small>{room.isPrivate ? 'Private chat' : 'Group chat'}</small>}
         </div>
+        <div className="row-wrap">
+          {room && (
+            <button className="action-btn" type="button" onClick={() => setMembersOpen(true)}>
+              Members
+            </button>
+          )}
+          {room?.isPrivate && blockState.otherUid && blockState.otherUid !== CHATBOT_UID && (
+            <button
+              className={`action-btn ${blockState.userBlockedOther ? 'danger' : ''}`}
+              type="button"
+              onClick={() => {
+                if (blockState.userBlockedOther) {
+                  unblockUser(blockState.otherUid)
+                } else {
+                  blockUser(blockState.otherUid)
+                }
+              }}
+            >
+              {blockState.userBlockedOther ? 'Unblock' : 'Block'}
+            </button>
+          )}
+        </div>
       </header>
+
+      {room?.isPrivate && blockState.otherUid && blockState.otherUid !== CHATBOT_UID && (
+        <div className="notice-stack">
+          {blockState.blockedByOther && (
+            <div className="notice-banner warning">
+              You can no longer chat with {blockLabel} because they blocked you.
+            </div>
+          )}
+          {blockState.userBlockedOther && (
+            <div className="notice-banner info">
+              You blocked {blockLabel}. Unblock to resume chatting.
+            </div>
+          )}
+        </div>
+      )}
+      {!room?.isPrivate && blockedMembers.length > 0 && (
+        <div className="notice-stack">
+          <div className="notice-banner info">
+            You blocked {blockedMembers.map((member) => member.label).join(', ')}. Messages are mutually hidden.
+          </div>
+        </div>
+      )}
 
       <div className="message-list">
         {messages.map((message) => {
@@ -140,6 +210,38 @@ const ChatWindow = ({ room, onReply }) => {
         })}
         <div ref={endRef} />
       </div>
+      {membersOpen && room && (
+        <div className="modal-overlay" onClick={() => setMembersOpen(false)}>
+          <div className="modal-card" onClick={(event) => event.stopPropagation()}>
+            <div className="row-end">
+              <h3>Room members</h3>
+              <button className="btn btn-ghost" type="button" onClick={() => setMembersOpen(false)}>
+                Close
+              </button>
+            </div>
+            <ul className="member-list">
+              {(room.members || []).map((uid) => {
+                const profile = memberProfiles?.[uid] || {}
+                const label = profile.username || profile.email || uid
+                const sub = profile.email || uid
+                return (
+                  <li key={uid} className="member-row">
+                    <img
+                      src={profile.photoURL || '/vite.svg'}
+                      alt="avatar"
+                      className="member-avatar"
+                    />
+                    <div className="member-info">
+                      <strong>{label}</strong>
+                      <small>{sub}</small>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        </div>
+      )}
     </section>
   )
 }

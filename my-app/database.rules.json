@@ -6,6 +6,10 @@
       "$uid": {
         "profile": {
           ".read": "auth != null",
+          ".write": "auth != null && (auth.uid === $uid || $uid === 'bot_assistant')"
+        },
+        "blocked": {
+          ".read": "auth != null && auth.uid === $uid",
           ".write": "auth != null && auth.uid === $uid"
         }
       }
@@ -20,7 +24,7 @@
       "$roomId": {
         ".read": "auth != null && root.child('rooms').child($roomId).child('members').child(auth.uid).val() === true",
         "$messageId": {
-          ".write": "auth != null && root.child('rooms').child($roomId).child('members').child(auth.uid).val() === true && ((!data.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && data.child('senderId').val() === auth.uid))",
+          ".write": "auth != null && root.child('rooms').child($roomId).child('members').child(auth.uid).val() === true && ((!data.exists() && (newData.child('senderId').val() === auth.uid || newData.child('senderId').val() === 'bot_assistant')) || (data.exists() && data.child('senderId').val() === auth.uid))",
           "reactions": {
             "$emoji": {
               "$uid": {

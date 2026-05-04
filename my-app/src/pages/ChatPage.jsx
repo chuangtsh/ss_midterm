@@ -5,14 +5,12 @@ import RoomList from '../components/RoomList'
 import ChatWindow from '../components/ChatWindow'
 import MessageComposer from '../components/MessageComposer'
 import ProfileModal from '../components/ProfileModal'
-import StickerCanvas from '../components/StickerCanvas'
 
 const ChatPage = () => {
   const { user, logout } = useAuth()
-  const { rooms, activeRoomId, sendMessage, sendSticker, chatError, messages } = useChat()
+  const { rooms, activeRoomId, sendMessage, chatError, messages, getRoomBlockState } = useChat()
 
   const [profileOpen, setProfileOpen] = useState(false)
-  const [stickerOpen, setStickerOpen] = useState(false)
   const [replyTo, setReplyTo] = useState(null)
   const [notificationPermission, setNotificationPermission] = useState(
     typeof Notification !== 'undefined' ? Notification.permission : 'denied',
@@ -20,6 +18,17 @@ const ChatPage = () => {
   const lastNotifiedId = useRef('')
 
   const room = useMemo(() => rooms.find((item) => item.id === activeRoomId), [rooms, activeRoomId])
+  const roomError = useMemo(
+    () => (chatError?.roomId === activeRoomId ? chatError.message : ''),
+    [chatError, activeRoomId],
+  )
+  const blockState = useMemo(() => getRoomBlockState(room), [getRoomBlockState, room])
+  const disabledReason = useMemo(() => {
+    if (!room || !room.isPrivate) return ''
+    if (blockState.blockedByOther) return 'You can no longer chat in this DM.'
+    if (blockState.userBlockedOther) return 'You blocked this user. Unblock to chat.'
+    return ''
+  }, [room, blockState])
 
   const requestNotifications = async () => {
     if (!('Notification' in window)) return
@@ -76,10 +85,11 @@ const ChatPage = () => {
             <ChatWindow room={room} onReply={setReplyTo} />
             <MessageComposer
               onSend={send}
-              onOpenSticker={() => setStickerOpen(true)}
               onCancelReply={() => setReplyTo(null)}
               replyTo={replyTo}
-              error={chatError}
+              error={roomError}
+              disabled={Boolean(disabledReason)}
+              disabledReason={disabledReason}
             />
           </>
         ) : (
@@ -88,15 +98,6 @@ const ChatPage = () => {
       </main>
 
       <ProfileModal open={profileOpen} onClose={() => setProfileOpen(false)} />
-      <StickerCanvas
-        open={stickerOpen}
-        onClose={() => setStickerOpen(false)}
-        onSend={(sticker) => {
-          if (!activeRoomId) return
-          sendSticker({ roomId: activeRoomId, sticker, replyTo })
-          setReplyTo(null)
-        }}
-      />
     </div>
   )
 }

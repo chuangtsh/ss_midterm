@@ -111,7 +111,7 @@ textarea {
 
 .chat-layout {
   display: grid;
-  grid-template-columns: 340px minmax(0, 1fr);
+  grid-template-columns: 420px minmax(0, 1fr);
   height: 100dvh;
   overflow: hidden;
   background:
@@ -185,9 +185,16 @@ textarea {
   gap: 0.4rem;
 }
 
+.user-search-status {
+  font-size: 0.82rem;
+  color: rgba(226, 232, 240, 0.85);
+  padding: 0.35rem 0.2rem;
+}
+
 .room-row {
-  display: grid;
-  gap: 0.35rem;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
 }
 
 .room-btn {
@@ -199,6 +206,17 @@ textarea {
   padding: 0.65rem;
   display: flex;
   justify-content: space-between;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.room-btn span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.room-row .action-btn {
+  white-space: nowrap;
 }
 
 .room-btn.active {
@@ -253,6 +271,31 @@ textarea {
   display: flex;
   justify-content: space-between;
   gap: 0.6rem;
+}
+
+.notice-stack {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.6rem 0.8rem 0;
+}
+
+.notice-banner {
+  border-radius: 12px;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.9rem;
+  border: 1px solid transparent;
+}
+
+.notice-banner.warning {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+.notice-banner.info {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
 }
 
 .warning {
@@ -893,4 +936,40 @@ textarea::placeholder {
 .profile-photo-block {
   background: rgba(15, 23, 42, 0.62);
   border: 1px solid rgba(96, 165, 250, 0.3);
+}
+
+.member-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.member-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 0.65rem;
+  align-items: center;
+  padding: 0.4rem;
+  border-radius: 12px;
+  border: 1px solid rgba(96, 165, 250, 0.25);
+  background: rgba(2, 6, 23, 0.35);
+}
+
+.member-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  object-fit: cover;
+  border: 2px solid rgba(147, 197, 253, 0.6);
+}
+
+.member-info {
+  display: grid;
+  min-width: 0;
+}
+
+.member-info small {
+  color: rgba(226, 232, 240, 0.75);
 }
