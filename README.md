@@ -63,7 +63,7 @@ This project is a fully functional web-based chatroom that uses Firebase for rea
 
 ```
 git clone https://github.com/chuangtsh/ss_midterm.git
-cd my-app
+cd ss_midterm/my-app
 ```
 
 2. **Install dependencies**
@@ -74,7 +74,7 @@ npm install
 
 3. **Create environment variables**
 
-Create a `.env.local` file in the project root with the following keys:
+Create a `.env.local` file in the project root(under `my-app/`) with the following keys:
 
 ```
 VITE_GEMINI_API_KEY=YOUR_GEMINI_KEY
