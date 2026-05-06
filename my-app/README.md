@@ -1,135 +1,100 @@
-# Firebase Chatroom (React + Vite)
+# Chatroom App - CS2410 Midterm Project
 
-This project now includes a production-style chatroom scaffold with:
+## 1. Project Title & Introduction
 
-- Email/password + Google sign in
-- Protected routes
-- Private rooms and room membership
-- Text/image/GIF/sticker messages
-- Edit/unsend for own messages only
-- Reply threading with scroll + highlight to original message
-- Emoji reactions and reaction removal
-- Profile modal with editable fields
-- Message input sanitization
-- Global message search
-- Notification API hook for unread alerts
+**Chatroom App - CS2410 Midterm Project**
 
-## 1) Folder structure
+This project is a fully functional web-based chatroom that uses Firebase for real-time messaging, authentication, and database management. It is built for the Software Studio course (CS2410 at NTHU) and demonstrates a production-style chat experience with private/group rooms, rich messaging, and interactive UI features.
 
-src/
-├─ components/
-│  ├─ ChatWindow.jsx
-│  ├─ MessageComposer.jsx
-│  ├─ ProfileModal.jsx
-│  ├─ ProtectedRoute.jsx
-│  ├─ RoomList.jsx
-│  └─ StickerCanvas.jsx
-├─ context/
-│  ├─ AuthContext.jsx
-│  └─ ChatContext.jsx
-├─ pages/
-│  ├─ AuthPage.jsx
-│  └─ ChatPage.jsx
-├─ utils/
-│  └─ sanitize.js
-├─ App.css
-├─ App.jsx
-├─ index.css
-└─ main.jsx
+---
 
-## 2) Install dependencies
+## 2. Features & Functionalities
 
-```bash
+### Basic Components
+- **Membership Mechanism:** Email Sign Up and Sign In.
+- **Hosted on Firebase Hosting.**[link](https://midterm-chatroom-6afb8.web.app)
+- **Authenticated Database Read/Write** for all chat data.
+- **Responsive Web Design (RWD)**: layout adapts to small screens without missing UI elements.
+- **Chatroom logic:**
+  - Private chatrooms
+  - Load chat history
+  - Invite new members (group chat)
+
+### Advanced Components
+- **User Profile (Modal/Page):** Edit profile picture, Username, Email, Phone number, and Address. Username and avatar appear in chat.
+- **Message Operations:** Unsend and edit own messages, search messages, send/unsend images.
+- **CSS Animation:** **Animated chatroom boxes** highlighted UI animation on chat room cards.
+
+### Bonus Components
+- **Gemini Chatbot Integration** (Gemini API).
+- **Block User:** Messages are mutually hidden and a warning appears in the chat UI, showing warning
+- **GIF Sending** with Giphy API.
+- **Emoji Reactions** on messages.
+- **Reply Threads:** Reply to a specific message, show reply preview above the input, and click to scroll/highlight the original message.
+
+---
+
+## 3. Operation Guide (How to Use)
+
+1. **Register / Sign In**
+   - Use email + password to sign up or sign in.
+2. **Join or Create Chatrooms**
+   - Create or select a chatroom from the left panel.
+   - For group chats, add multiple users and create a group.
+3. **Invite Friends**
+   - Search users by username or email, then add them to a group.
+4. **Chat & Manage Messages**
+   - Send text, images, GIFs, and react with emojis.
+   - Edit or unsend your own messages.
+5. **Reply to Messages**
+   - Click Reply on any message to thread responses and jump back to the original.
+6. **Block Users**
+   - Block a user in a private room or group; their messages are hidden and a warning appears.
+7. **Use the Gemini Chatbot**
+   - Open the AI Assistant room and ask questions.
+
+---
+
+## 4. Local Setup Instructions (STEP BY STEP)
+
+> These steps are required for TA grading. Please follow in order.
+
+1. **Clone the repository**
+
+```
+git clone https://github.com/chuangtsh/ss_midterm.git
+cd my-app
+```
+
+2. **Install dependencies**
+
+```
 npm install
 ```
 
-Runtime packages used:
+3. **Create environment variables**
 
-- firebase
-- react-router-dom
-- dompurify
-- framer-motion
+Create a `.env.local` file in the project root with the following keys:
 
-## 3) Firebase config integration
-
-Firebase setup is loaded from [firebase_config.js](firebase_config.js).
-
-If you need to update keys, edit only that file.
-
-## 4) Environment variables
-
-Create [.env.local](.env.local):
-
-```bash
-VITE_TENOR_API_KEY=your_tenor_key
+```
+VITE_GEMINI_API_KEY=YOUR_GEMINI_KEY
+VITE_GIPHY_API_KEY=YOUR_TENOR_KEY
 ```
 
-## 5) Realtime Database data model
+> Firebase config is stored in [firebase_config.js](firebase_config.js). Update it only if you want to use your own Firebase project.
 
-- users/{uid}/profile
-	- username, usernameLower, email, emailLower, phone, address, photoURL
-- rooms/{roomId}
-	- name, isPrivate, members: { uid: true }, createdBy, createdAt, updatedAt
-- messages/{roomId}/{messageId}
-	- senderId, senderEmail, senderName, senderPhoto
-	- text, searchTokens[]
-	- imageUrl, gifUrl, sticker
-	- replyToId, replyPreview
-	- reactions: { emoji: { uid: true } }
-	- participants[]
+4. **Run the development server**
 
-## 6) Realtime Database security rules (starter)
-
-```txt
-{
-	"rules": {
-		"users": {
-			".read": "auth != null",
-			".indexOn": ["profile/usernameLower", "profile/emailLower"],
-			"$uid": {
-				"profile": {
-					".read": "auth != null",
-					".write": "auth != null && auth.uid === $uid"
-				}
-			}
-		},
-		"rooms": {
-			".read": "auth != null",
-			"$roomId": {
-				".write": "auth != null && (data.exists() ? data.child('members').child(auth.uid).val() === true : newData.child('members').child(auth.uid).val() === true)"
-			}
-		},
-		"messages": {
-			"$roomId": {
-				".read": "auth != null && root.child('rooms').child($roomId).child('members').child(auth.uid).val() === true",
-				"$messageId": {
-					".write": "auth != null && root.child('rooms').child($roomId).child('members').child(auth.uid).val() === true && ((!data.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && data.child('senderId').val() === auth.uid))"
-				}
-			}
-		}
-	}
-}
+```
+npm run dev
 ```
 
-## 7) Firebase Hosting
+The app will be available at the local URL shown in the terminal.
 
-```bash
-npm run build
-npm install -g firebase-tools
-firebase login
-firebase init hosting
-# Select: existing project, public directory = dist, SPA rewrite = yes
-firebase deploy
-```
+---
 
-## 8) Hook usage map
+## 5. Additional Notes
 
-- `useState`: forms, active room, edit/reply mode, GIF results, modal open state
-- `useEffect`: auth listener, room/message realtime listeners, notification permission, unread notifications
-- `useContext`: global auth state (`AuthContext`) and chat state (`ChatContext`)
-
-## 9) Notes for remaining hardening
-
-- Move AI requests to Firebase Functions (secret-safe)
-- Add a server-side search index if global message search volume grows
-- Add optional service worker if you need true background push notifications
+- Git was used for regular version control throughout development.
+- **Deployment URL (replace this):**
+  - Firebase Hosting URL: **[https://midterm-chatroom-6afb8.web.app]**

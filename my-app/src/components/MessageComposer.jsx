@@ -50,7 +50,7 @@ const MessageComposer = ({
   }
 
   const fetchGifs = useCallback(async (term = gifTerm) => {
-    const key = import.meta.env.VITE_GIPHY_API_KEY || 'XLH4a1r3MPnDris9011QGpicsRcn2TG7'
+    const key = import.meta.env.VITE_GIPHY_API_KEY
     const query = term.trim()
     if (!key || !query) {
       setGifResults([])
